@@ -1,7 +1,8 @@
 --[[
     =============================================================================
-    GARDEN SUITE PRO - V3.1 (REFINED UI & FLOW FIX)
-    Features: Category Dropdown, Inline Quantity Input, Vibrant Glassmorphism
+    GARDEN SUITE PRO - V4.0 (RAYFIELD UI DARK THEME EDITION)
+    Framework: Rayfield UI Library
+    Preserved Engine: Replica Reader, Flex Remote Handler, Stock Clamping, Automations
     =============================================================================
 --]]
 
@@ -12,26 +13,29 @@ local VirtualInputManager = game:GetService("VirtualInputManager")
 local UserInputService    = game:GetService("UserInputService")
 local Players             = game:GetService("Players")
 local CoreGui             = game:GetService("CoreGui")
-local TweenService        = game:GetService("TweenService")
 local RunService          = game:GetService("RunService")
 local Lighting            = game:GetService("Lighting")
 local ReplicatedStorage    = game:GetService("ReplicatedStorage")
 
 local LocalPlayer = Players.LocalPlayer or Players.PlayerAdded:Wait()
 
--- // Safe GUI Parent Resolution // --
-local function getGuiParent(): Instance
-	local success, _ = pcall(function()
-		local t = CoreGui.Name
-	end)
-	if success then return CoreGui end
-	return LocalPlayer:WaitForChild("PlayerGui")
+-- // Safe Cleanup Protocol (Kill Old Instances) // --
+local function destroyOldGui()
+	local parentGuis = { CoreGui, LocalPlayer:FindFirstChild("PlayerGui") }
+	for _, pGui in ipairs(parentGuis) do
+		if pGui then
+			for _, child in ipairs(pGui:GetChildren()) do
+				if child.Name == "Rayfield" or child.Name == "GardenSuiteGUI_V3" or child.Name == "GardenSuiteGUI" then
+					child:Destroy()
+				end
+			end
+		end
+	end
 end
+destroyOldGui()
 
--- // Clean Previous Instances // --
-local parentGui = getGuiParent()
-local oldGui = parentGui:FindFirstChild("GardenSuiteGUI_V3")
-if oldGui then oldGui:Destroy() end
+-- // Load Rayfield Framework // --
+local Rayfield = loadstring(game:HttpGet("https://sirius.menu/rayfield"))()
 
 -- // Global State Manager // --
 local State = {
@@ -54,7 +58,7 @@ local PromptConnections       = {}
 local MailCfg = {
 	recipient = "",
 	category = "Pets",
-	note = "Sent via Garden Suite Pro V3.1",
+	note = "Sent via Garden Suite Pro V4",
 	maxMailLines = 20,
 	sendCooldownSec = 11,
 }
@@ -319,467 +323,250 @@ local function toggleClearTextures(enabled: boolean)
 end
 
 -- =============================================================================
--- VIBRANT MODERN UI DESIGN SYSTEM
+-- RAYFIELD UI INITIALIZATION (DARK THEME)
 -- =============================================================================
 
-local THEME = {
-	WindowBg    = Color3.fromRGB(11, 13, 18),
-	HeaderBg    = Color3.fromRGB(17, 20, 28),
-	SidebarBg   = Color3.fromRGB(14, 16, 22),
-	CardBg      = Color3.fromRGB(20, 24, 34),
-	CardHover   = Color3.fromRGB(28, 33, 46),
-	Stroke      = Color3.fromRGB(36, 42, 58),
-	StrokeFocus = Color3.fromRGB(99, 102, 241),
-	Accent      = Color3.fromRGB(16, 185, 129),
-	AccentIndigo= Color3.fromRGB(99, 102, 241),
-	TextMain    = Color3.fromRGB(243, 244, 246),
-	TextSub     = Color3.fromRGB(156, 163, 175),
-	TextMuted   = Color3.fromRGB(107, 114, 128),
+local Window = Rayfield:CreateWindow({
+	Name = "Garden Suite Pro V4.0",
+	LoadingTitle = "Garden Suite Pro",
+	LoadingSubtitle = "Rayfield Dark Theme",
+	ConfigurationSaving = { Enabled = false },
+	Discord = { Enabled = false },
+	KeySystem = false,
+})
+
+-- Tab 1: Main Automations
+local MainTab = Window:CreateTab("Main Automations", 4483362458)
+MainTab:CreateSection("Key Pressers & Interactions")
+
+MainTab:CreateToggle({
+	Name = "Instant Interact",
+	CurrentValue = false,
+	Flag = "InstantInteract",
+	Callback = function(Value) toggleInstantInteract(Value) end,
+})
+
+MainTab:CreateToggle({
+	Name = "Auto Spam E",
+	CurrentValue = false,
+	Flag = "AutoSpamE",
+	Callback = function(Value) State.AutoSpamE = Value end,
+})
+
+MainTab:CreateToggle({
+	Name = "Auto Drop Item",
+	CurrentValue = false,
+	Flag = "AutoDrop",
+	Callback = function(Value) State.AutoDrop = Value end,
+})
+
+-- Tab 2: Visual Optimizations
+local VisualTab = Window:CreateTab("Visual Optimizations", 4483362458)
+VisualTab:CreateSection("Performance Tweak")
+
+VisualTab:CreateToggle({
+	Name = "Anti-Lag Plants",
+	CurrentValue = false,
+	Flag = "AntiLagPlants",
+	Callback = function(Value) toggleAntiLagPlants(Value) end,
+})
+
+VisualTab:CreateToggle({
+	Name = "Clear Map Textures & Sky",
+	CurrentValue = false,
+	Flag = "ClearTextures",
+	Callback = function(Value) toggleClearTextures(Value) end,
+})
+
+-- Tab 3: Mail Tool (Integrated Mailbox System)
+local MailTab = Window:CreateTab("Mail Tool", 4483362458)
+MailTab:CreateSection("Gifting Configuration")
+
+local MailState = {
+	Recipient = "",
+	SelectedCategory = "Pets",
+	SelectedItemKey = nil,
+	InputQty = 1,
+	Cart = {},
+	Sending = false,
 }
 
-local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "GardenSuiteGUI_V3"
-ScreenGui.ResetOnSpawn = false
-ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-ScreenGui.Parent = parentGui
+MailTab:CreateInput({
+	Name = "Recipient Roblox Username",
+	PlaceholderText = "Type username here...",
+	RemoveTextAfterFocusLost = false,
+	Callback = function(Text) MailState.Recipient = Text end,
+})
 
-local MainFrame = Instance.new("Frame")
-MainFrame.Name = "MainFrame"
-MainFrame.Size = UDim2.fromOffset(500, 350)
-MainFrame.Position = UDim2.new(0.5, -250, 0.5, -175)
-MainFrame.BackgroundColor3 = THEME.WindowBg
-MainFrame.BorderSizePixel = 0
-MainFrame.ClipsDescendants = true
-MainFrame.Parent = ScreenGui
+local ItemDropdown = nil
 
-Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0, 12)
-local MainStroke = Instance.new("UIStroke") MainStroke.Color = THEME.Stroke MainStroke.Thickness = 1.5 MainStroke.Parent = MainFrame
-
--- Header Bar
-local Header = Instance.new("Frame")
-Header.Size = UDim2.new(1, 0, 0, 40)
-Header.BackgroundColor3 = THEME.HeaderBg
-Header.BorderSizePixel = 0
-Header.Parent = MainFrame
-Instance.new("UICorner", Header).CornerRadius = UDim.new(0, 12)
-
-local TitleLogo = Instance.new("TextLabel")
-TitleLogo.Size = UDim2.new(0.6, 0, 1, 0) TitleLogo.Position = UDim2.fromOffset(14, 0) TitleLogo.BackgroundTransparency = 1
-TitleLogo.Text = "GARDEN SUITE <font color='#6366F1'>PRO</font>" TitleLogo.RichText = true TitleLogo.Font = Enum.Font.GothamBold TitleLogo.TextSize = 13
-TitleLogo.TextColor3 = THEME.TextMain TitleLogo.TextXAlignment = Enum.TextXAlignment.Left TitleLogo.Parent = Header
-
-local FpsPill = Instance.new("Frame")
-FpsPill.Size = UDim2.fromOffset(75, 22) FpsPill.Position = UDim2.new(1, -115, 0.5, -11) FpsPill.BackgroundColor3 = THEME.CardBg FpsPill.Parent = Header
-Instance.new("UICorner", FpsPill).CornerRadius = UDim.new(1, 0)
-local FpsStroke = Instance.new("UIStroke") FpsStroke.Color = THEME.Stroke FpsStroke.Parent = FpsPill
-
-local FpsText = Instance.new("TextLabel")
-FpsText.Size = UDim2.new(1, 0, 1, 0) FpsText.BackgroundTransparency = 1 FpsText.Text = "60 FPS" FpsText.Font = Enum.Font.GothamBold FpsText.TextSize = 10
-FpsText.TextColor3 = THEME.Accent FpsText.Parent = FpsPill
-
-local CloseBtn = Instance.new("TextButton")
-CloseBtn.Size = UDim2.fromOffset(26, 26) CloseBtn.Position = UDim2.new(1, -34, 0.5, -13) CloseBtn.BackgroundColor3 = THEME.CardBg
-CloseBtn.Text = "✕" CloseBtn.Font = Enum.Font.GothamBold CloseBtn.TextSize = 12 CloseBtn.TextColor3 = THEME.TextSub CloseBtn.Parent = Header
-Instance.new("UICorner", CloseBtn).CornerRadius = UDim.new(0, 6)
-CloseBtn.MouseButton1Click:Connect(function() ScreenGui.Enabled = false end)
-
--- Window Dragging
-local dragging, dragStart, startPos
-Header.InputBegan:Connect(function(input)
-	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-		dragging = true dragStart = input.Position startPos = MainFrame.Position
-		input.Changed:Connect(function() if input.UserInputState == Enum.UserInputState.End then dragging = false end end)
+local function getItemOptions(cat: string)
+	local list = listCategoryItems(cat)
+	local options = {}
+	if #list == 0 then return { "No items in category" } end
+	for _, item in ipairs(list) do
+		table.insert(options, item.displayName .. " (Stock: " .. item.count .. ")")
 	end
-end)
-UserInputService.InputChanged:Connect(function(input)
-	if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-		local delta = input.Position - dragStart
-		MainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
-	end
-end)
+	return options
+end
 
--- Main Body Layout
-local Body = Instance.new("Frame")
-Body.Size = UDim2.new(1, 0, 1, -40) Body.Position = UDim2.fromOffset(0, 40) Body.BackgroundTransparency = 1 Body.Parent = MainFrame
-
-local Sidebar = Instance.new("Frame")
-Sidebar.Size = UDim2.new(0, 120, 1, 0) Sidebar.BackgroundColor3 = THEME.SidebarBg Sidebar.BorderSizePixel = 0 Sidebar.Parent = Body
-
-local SidebarList = Instance.new("UIListLayout") SidebarList.Padding = UDim.new(0, 6) SidebarList.HorizontalAlignment = Enum.HorizontalAlignment.Center SidebarList.Parent = Sidebar
-local SidebarPad = Instance.new("UIPadding") SidebarPad.PaddingTop = UDim.new(0, 10) SidebarPad.Parent = Sidebar
-
-local ContentArea = Instance.new("Frame")
-ContentArea.Size = UDim2.new(1, -120, 1, 0) ContentArea.Position = UDim2.fromOffset(120, 0) ContentArea.BackgroundTransparency = 1 ContentArea.Parent = Body
-
--- Tabs
-local Tabs, TabButtons, activeTab = {}, {}, nil
-local function createTab(tabName: string, iconSymbol: string): Frame
-	local tabBtn = Instance.new("TextButton")
-	tabBtn.Size = UDim2.new(0, 106, 0, 32) tabBtn.BackgroundColor3 = THEME.CardBg tabBtn.BackgroundTransparency = 0.6
-	tabBtn.Text = "  " .. iconSymbol .. "  " .. tabName tabBtn.Font = Enum.Font.GothamMedium tabBtn.TextSize = 11 tabBtn.TextColor3 = THEME.TextSub
-	tabBtn.TextXAlignment = Enum.TextXAlignment.Left tabBtn.BorderSizePixel = 0 tabBtn.Parent = Sidebar
-	Instance.new("UICorner", tabBtn).CornerRadius = UDim.new(0, 7)
-
-	local tabContent = Instance.new("Frame")
-	tabContent.Name = "Content_" .. tabName tabContent.Size = UDim2.new(1, 0, 1, 0) tabContent.BackgroundTransparency = 1 tabContent.Visible = false tabContent.Parent = ContentArea
-
-	tabBtn.MouseButton1Click:Connect(function()
-		for name, content in pairs(Tabs) do content.Visible = (name == tabName) end
-		for name, button in pairs(TabButtons) do
-			if name == tabName then
-				TweenService:Create(button, TweenInfo.new(0.15), { BackgroundTransparency = 0, TextColor3 = THEME.TextMain, BackgroundColor3 = THEME.AccentIndigo }):Play()
-			else
-				TweenService:Create(button, TweenInfo.new(0.15), { BackgroundTransparency = 0.6, TextColor3 = THEME.TextSub, BackgroundColor3 = THEME.CardBg }):Play()
-			end
+MailTab:CreateDropdown({
+	Name = "Category",
+	Options = CATEGORIES,
+	CurrentOption = { "Pets" },
+	MultipleOptions = false,
+	Flag = "CategoryDropdown",
+	Callback = function(Option)
+		local cat = typeof(Option) == "table" and Option[1] or Option
+		MailState.SelectedCategory = cat
+		MailState.SelectedItemKey = nil
+		if ItemDropdown then
+			ItemDropdown:Refresh(getItemOptions(cat), true)
 		end
-	end)
+	end,
+})
 
-	Tabs[tabName] = tabContent
-	TabButtons[tabName] = tabBtn
+ItemDropdown = MailTab:CreateDropdown({
+	Name = "Select Item from Inventory",
+	Options = getItemOptions("Pets"),
+	CurrentOption = { "Select item..." },
+	MultipleOptions = false,
+	Flag = "ItemDropdown",
+	Callback = function(Option)
+		local rawText = typeof(Option) == "table" and Option[1] or Option
+		local key = string.match(rawText, "^(.-)%s*%(") or rawText
+		MailState.SelectedItemKey = key
+	end,
+})
 
-	if not activeTab then
-		activeTab = tabName tabContent.Visible = true
-		tabBtn.BackgroundTransparency = 0 tabBtn.TextColor3 = THEME.TextMain tabBtn.BackgroundColor3 = THEME.AccentIndigo
-	end
-	return tabContent
-end
+MailTab:CreateInput({
+	Name = "Quantity to Send",
+	PlaceholderText = "Default: 1",
+	RemoveTextAfterFocusLost = false,
+	Callback = function(Text)
+		MailState.InputQty = tonumber(Text) or 1
+	end,
+})
 
-local function addToggleCard(tabContainer: Instance, title: string, desc: string, defaultState: boolean, callback: (boolean) -> ())
-	local card = Instance.new("Frame")
-	card.Size = UDim2.new(0, 350, 0, 48) card.BackgroundColor3 = THEME.CardBg card.BorderSizePixel = 0 card.Parent = tabContainer
-	Instance.new("UICorner", card).CornerRadius = UDim.new(0, 8)
-	local stroke = Instance.new("UIStroke") stroke.Color = THEME.Stroke stroke.Thickness = 1 stroke.Parent = card
+local CartParagraph = MailTab:CreateParagraph({ Title = "Cart Summary (0 Items)", Content = "No items in cart yet." })
 
-	local cardTitle = Instance.new("TextLabel")
-	cardTitle.Size = UDim2.new(0.7, 0, 0, 20) cardTitle.Position = UDim2.fromOffset(12, 6) cardTitle.BackgroundTransparency = 1
-	cardTitle.Text = title cardTitle.Font = Enum.Font.GothamBold cardTitle.TextSize = 11 cardTitle.TextColor3 = THEME.TextMain cardTitle.TextXAlignment = Enum.TextXAlignment.Left cardTitle.Parent = card
-
-	local cardDesc = Instance.new("TextLabel")
-	cardDesc.Size = UDim2.new(0.7, 0, 0, 14) cardDesc.Position = UDim2.fromOffset(12, 26) cardDesc.BackgroundTransparency = 1
-	cardDesc.Text = desc cardDesc.Font = Enum.Font.Gotham cardDesc.TextSize = 9 cardDesc.TextColor3 = THEME.TextSub cardDesc.TextXAlignment = Enum.TextXAlignment.Left cardDesc.Parent = card
-
-	local switchBtn = Instance.new("TextButton")
-	switchBtn.Size = UDim2.fromOffset(42, 22) switchBtn.Position = UDim2.new(1, -54, 0.5, -11)
-	switchBtn.BackgroundColor3 = defaultState and THEME.Accent or THEME.Stroke switchBtn.Text = "" switchBtn.BorderSizePixel = 0 switchBtn.Parent = card
-	Instance.new("UICorner", switchBtn).CornerRadius = UDim.new(1, 0)
-
-	local knob = Instance.new("Frame")
-	knob.Size = UDim2.fromOffset(16, 16) knob.Position = defaultState and UDim2.fromOffset(23, 3) or UDim2.fromOffset(3, 3)
-	knob.BackgroundColor3 = Color3.fromRGB(255, 255, 255) knob.BorderSizePixel = 0 knob.Parent = switchBtn
-	Instance.new("UICorner", knob).CornerRadius = UDim.new(1, 0)
-
-	local currentState = defaultState
-	switchBtn.MouseButton1Click:Connect(function()
-		currentState = not currentState
-		local targetPos = currentState and UDim2.fromOffset(23, 3) or UDim2.fromOffset(3, 3)
-		local targetColor = currentState and THEME.Accent or THEME.Stroke
-		TweenService:Create(knob, TweenInfo.new(0.15), { Position = targetPos }):Play()
-		TweenService:Create(switchBtn, TweenInfo.new(0.15), { BackgroundColor3 = targetColor }):Play()
-		callback(currentState)
-	end)
-end
-
--- Tabs Config
-local mainTabContent   = createTab("Main", "⚡")
-local visualTabContent = createTab("Visuals", "👁")
-local mailTabContent   = createTab("Mail Tool", "📦")
-
-local function createScrollLayout(parentTab: Frame): ScrollingFrame
-	local scroller = Instance.new("ScrollingFrame")
-	scroller.Size = UDim2.new(1, 0, 1, 0) scroller.BackgroundTransparency = 1 scroller.BorderSizePixel = 0
-	scroller.ScrollBarThickness = 3 scroller.ScrollBarImageColor3 = THEME.Stroke scroller.Parent = parentTab
-	local list = Instance.new("UIListLayout") list.Padding = UDim.new(0, 8) list.HorizontalAlignment = Enum.HorizontalAlignment.Center list.Parent = scroller
-	local pad = Instance.new("UIPadding") pad.PaddingTop = UDim.new(0, 10) pad.PaddingBottom = UDim.new(0, 10) pad.Parent = scroller
-	list:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function() scroller.CanvasSize = UDim2.fromOffset(0, list.AbsoluteContentSize.Y + 20) end)
-	return scroller
-end
-
-local mainScroll   = createScrollLayout(mainTabContent)
-local visualScroll = createScrollLayout(visualTabContent)
-
-addToggleCard(mainScroll, "Instant Interact", "Bypass hold duration prompt", State.InstantInteract, toggleInstantInteract)
-addToggleCard(mainScroll, "Auto Spam E", "Simulate rapid E key press", State.AutoSpamE, function(s) State.AutoSpamE = s end)
-addToggleCard(mainScroll, "Auto Drop Item", "Simulate rapid Backspace press", State.AutoDrop, function(s) State.AutoDrop = s end)
-
-addToggleCard(visualScroll, "Anti-Lag Plants", "Hide plant meshes to save RAM", State.AntiLagPlants, toggleAntiLagPlants)
-addToggleCard(visualScroll, "Clear Textures", "SmoothPlastic map & clear sky", State.ClearTextures, toggleClearTextures)
-
--- =============================================================================
--- REDESIGNED MAIL TOOL (CATEGORY DROPDOWN + INLINE QUANTITY INPUT)
--- =============================================================================
-
-local MailUI = { SelectedCategory = "Pets", SelectedItemKey = nil, Cart = {}, Sending = false }
-
-local mailContainer = Instance.new("Frame")
-mailContainer.Size = UDim2.new(1, 0, 1, 0) mailContainer.BackgroundTransparency = 1 mailContainer.Parent = mailTabContent
-
-local mailPad = Instance.new("UIPadding")
-mailPad.PaddingLeft = UDim.new(0, 14) mailPad.PaddingRight = UDim.new(0, 14) mailPad.PaddingTop = UDim.new(0, 10) mailPad.Parent = mailContainer
-
--- 1. Recipient Input
-local recCard = Instance.new("Frame")
-recCard.Size = UDim2.new(1, 0, 0, 32) recCard.BackgroundColor3 = THEME.CardBg recCard.Parent = mailContainer
-Instance.new("UICorner", recCard).CornerRadius = UDim.new(0, 6)
-local recStroke = Instance.new("UIStroke") recStroke.Color = THEME.Stroke recStroke.Parent = recCard
-
-local recipientBox = Instance.new("TextBox")
-recipientBox.Size = UDim2.new(1, -20, 1, 0) recipientBox.Position = UDim2.fromOffset(10, 0) recipientBox.BackgroundTransparency = 1
-recipientBox.Font = Enum.Font.GothamMedium recipientBox.TextSize = 10 recipientBox.TextColor3 = THEME.TextMain
-recipientBox.PlaceholderText = "Recipient Username..." recipientBox.PlaceholderColor3 = THEME.TextMuted recipientBox.Text = "" recipientBox.Parent = recCard
-
-recipientBox.Focused:Connect(function() TweenService:Create(recStroke, TweenInfo.new(0.2), { Color = THEME.StrokeFocus }):Play() end)
-recipientBox.FocusLost:Connect(function() TweenService:Create(recStroke, TweenInfo.new(0.2), { Color = THEME.Stroke }):Play() end)
-
--- 2. Category Selector Dropdown Button
-local catDropdownBtn = Instance.new("TextButton")
-catDropdownBtn.Size = UDim2.new(1, 0, 0, 30) catDropdownBtn.Position = UDim2.fromOffset(0, 38) catDropdownBtn.BackgroundColor3 = THEME.CardBg
-catDropdownBtn.Font = Enum.Font.GothamMedium catDropdownBtn.TextSize = 10 catDropdownBtn.TextColor3 = THEME.TextMain
-catDropdownBtn.Text = "  Category: Pets  ▼" catDropdownBtn.TextXAlignment = Enum.TextXAlignment.Left catDropdownBtn.Parent = mailContainer
-Instance.new("UICorner", catDropdownBtn).CornerRadius = UDim.new(0, 6)
-local catStroke = Instance.new("UIStroke") catStroke.Color = THEME.Stroke catStroke.Parent = catDropdownBtn
-
--- Category Popup Modal
-local catPopupFrame = Instance.new("ScrollingFrame")
-catPopupFrame.Size = UDim2.new(1, 0, 0, 110) catPopupFrame.Position = UDim2.fromOffset(0, 72) catPopupFrame.BackgroundColor3 = THEME.HeaderBg
-catPopupFrame.BorderSizePixel = 0 catPopupFrame.CanvasSize = UDim2.fromOffset(0, #CATEGORIES * 26) catPopupFrame.ScrollBarThickness = 3
-catPopupFrame.Visible = false catPopupFrame.ZIndex = 40 catPopupFrame.Parent = mailContainer
-Instance.new("UICorner", catPopupFrame).CornerRadius = UDim.new(0, 6)
-local catPopStroke = Instance.new("UIStroke") catPopStroke.Color = THEME.StrokeFocus catPopStroke.Parent = catPopupFrame
-local catPopList = Instance.new("UIListLayout") catPopList.Padding = UDim.new(0, 2) catPopList.Parent = catPopupFrame
-
-for _, catName in ipairs(CATEGORIES) do
-	local cBtn = Instance.new("TextButton")
-	cBtn.Size = UDim2.new(0.96, 0, 0, 24) cBtn.BackgroundColor3 = THEME.CardBg cBtn.Text = "  " .. catName cBtn.Font = Enum.Font.GothamMedium
-	cBtn.TextSize = 10 cBtn.TextColor3 = THEME.TextMain cBtn.TextXAlignment = Enum.TextXAlignment.Left cBtn.ZIndex = 41 cBtn.Parent = catPopupFrame
-	Instance.new("UICorner", cBtn).CornerRadius = UDim.new(0, 4)
-
-	cBtn.MouseButton1Click:Connect(function()
-		MailUI.SelectedCategory = catName
-		MailUI.SelectedItemKey = nil
-		catDropdownBtn.Text = "  Category: " .. catName .. "  ▼"
-		catPopupFrame.Visible = false
-	end)
-end
-
-catDropdownBtn.MouseButton1Click:Connect(function()
-	catPopupFrame.Visible = not catPopupFrame.Visible
-end)
-
--- 3. Item Picker Dropdown Button
-local itemPickerBtn = Instance.new("TextButton")
-itemPickerBtn.Size = UDim2.new(1, 0, 0, 30) itemPickerBtn.Position = UDim2.fromOffset(0, 74) itemPickerBtn.BackgroundColor3 = THEME.CardBg
-itemPickerBtn.Font = Enum.Font.GothamMedium itemPickerBtn.TextSize = 10 itemPickerBtn.TextColor3 = THEME.TextSub
-itemPickerBtn.Text = "  Select Item from Inventory...  ▼" itemPickerBtn.TextXAlignment = Enum.TextXAlignment.Left itemPickerBtn.Parent = mailContainer
-Instance.new("UICorner", itemPickerBtn).CornerRadius = UDim.new(0, 6)
-local itemStroke = Instance.new("UIStroke") itemStroke.Color = THEME.Stroke itemStroke.Parent = itemPickerBtn
-
--- Item Dropdown Modal Overlay
-local itemPopupFrame = Instance.new("ScrollingFrame")
-itemPopupFrame.Size = UDim2.new(1, 0, 0, 120) itemPopupFrame.Position = UDim2.fromOffset(0, 108) itemPopupFrame.BackgroundColor3 = THEME.HeaderBg
-itemPopupFrame.BorderSizePixel = 0 itemPopupFrame.CanvasSize = UDim2.fromOffset(0, 0) itemPopupFrame.ScrollBarThickness = 3
-itemPopupFrame.Visible = false itemPopupFrame.ZIndex = 30 itemPopupFrame.Parent = mailContainer
-Instance.new("UICorner", itemPopupFrame).CornerRadius = UDim.new(0, 8)
-local dropStroke = Instance.new("UIStroke") dropStroke.Color = THEME.StrokeFocus dropStroke.Thickness = 1.5 dropStroke.Parent = itemPopupFrame
-local dropList = Instance.new("UIListLayout") dropList.Padding = UDim.new(0, 4) dropList.Parent = itemPopupFrame
-local dropPad = Instance.new("UIPadding") dropPad.PaddingTop = UDim.new(0, 4) dropPad.PaddingLeft = UDim.new(0, 4) dropPad.Parent = itemPopupFrame
-
-local function populateItemDropdown()
-	for _, child in ipairs(itemPopupFrame:GetChildren()) do if child:IsA("TextButton") then child:Destroy() end end
-	local items = listCategoryItems(MailUI.SelectedCategory)
-	if #items == 0 then
-		itemPickerBtn.Text = "  No items in category: " .. MailUI.SelectedCategory
-		itemPickerBtn.TextColor3 = Color3.fromRGB(239, 68, 68)
+local function updateCartParagraph()
+	if #MailState.Cart == 0 then
+		CartParagraph:Set({ Title = "Cart Summary (0 Items)", Content = "No items in cart yet." })
 		return
 	end
-
-	for _, item in ipairs(items) do
-		local row = Instance.new("TextButton")
-		row.Size = UDim2.new(0.96, 0, 0, 26) row.BackgroundColor3 = THEME.CardBg row.Text = "" row.ZIndex = 31 row.Parent = itemPopupFrame
-		Instance.new("UICorner", row).CornerRadius = UDim.new(0, 5)
-
-		local nameLbl = Instance.new("TextLabel")
-		nameLbl.Size = UDim2.new(0.65, 0, 1, 0) nameLbl.Position = UDim2.fromOffset(8, 0) nameLbl.BackgroundTransparency = 1
-		nameLbl.Text = item.displayName nameLbl.Font = Enum.Font.GothamMedium nameLbl.TextSize = 10 nameLbl.TextColor3 = THEME.TextMain
-		nameLbl.TextXAlignment = Enum.TextXAlignment.Left nameLbl.ZIndex = 32 nameLbl.Parent = row
-
-		local countBadge = Instance.new("TextLabel")
-		countBadge.Size = UDim2.new(0.28, 0, 0, 18) countBadge.Position = UDim2.new(0.7, 0, 0.5, -9) countBadge.BackgroundColor3 = THEME.HeaderBg
-		countBadge.Text = "Stock: " .. item.count countBadge.Font = Enum.Font.GothamBold countBadge.TextSize = 9 countBadge.TextColor3 = THEME.Accent
-		countBadge.ZIndex = 32 countBadge.Parent = row
-		Instance.new("UICorner", countBadge).CornerRadius = UDim.new(0, 4)
-
-		row.MouseButton1Click:Connect(function()
-			MailUI.SelectedItemKey = item.itemKey
-			itemPickerBtn.Text = "  " .. item.displayName .. " (Stock: " .. item.count .. ")"
-			itemPickerBtn.TextColor3 = THEME.TextMain
-			itemPopupFrame.Visible = false
-		end)
+	local summaryText = ""
+	for i, entry in ipairs(MailState.Cart) do
+		summaryText = summaryText .. string.format("%d. %s [%s] x%d (Max Stock: %d)\n", i, entry.itemKey, entry.category, entry.sendCount, entry.maxAvailable)
 	end
-	itemPopupFrame.CanvasSize = UDim2.fromOffset(0, #items * 30)
+	CartParagraph:Set({ Title = string.format("Cart Summary (%d Item Types)", #MailState.Cart), Content = summaryText })
 end
 
-itemPickerBtn.MouseButton1Click:Connect(function()
-	catPopupFrame.Visible = false
-	itemPopupFrame.Visible = not itemPopupFrame.Visible
-	if itemPopupFrame.Visible then populateItemDropdown() end
-end)
-
--- 4. Quantity Input + Add to Cart Row (NEW IMPROVED WORKFLOW!)
-local addRow = Instance.new("Frame")
-addRow.Size = UDim2.new(1, 0, 0, 30) addRow.Position = UDim2.fromOffset(0, 110) addRow.BackgroundTransparency = 1 addRow.Parent = mailContainer
-
-local qtyInputBox = Instance.new("TextBox")
-qtyInputBox.Size = UDim2.new(0.35, 0, 1, 0) qtyInputBox.BackgroundColor3 = THEME.CardBg qtyInputBox.BorderSizePixel = 0
-qtyInputBox.Font = Enum.Font.GothamBold qtyInputBox.TextSize = 10 qtyInputBox.TextColor3 = THEME.Accent
-qtyInputBox.PlaceholderText = "Qty (Default: 1)" qtyInputBox.PlaceholderColor3 = THEME.TextMuted qtyInputBox.Text = "1" qtyInputBox.Parent = addRow
-Instance.new("UICorner", qtyInputBox).CornerRadius = UDim.new(0, 6)
-local qtyStroke = Instance.new("UIStroke") qtyStroke.Color = THEME.Stroke qtyStroke.Parent = qtyInputBox
-
-local addCartBtn = Instance.new("TextButton")
-addCartBtn.Size = UDim2.new(0.62, 0, 1, 0) addCartBtn.Position = UDim2.new(0.38, 0, 0, 0) addCartBtn.BackgroundColor3 = THEME.AccentIndigo
-addCartBtn.Font = Enum.Font.GothamBold addCartBtn.TextSize = 11 addCartBtn.TextColor3 = Color3.fromRGB(255, 255, 255) addCartBtn.Text = "+ Add to Cart" addCartBtn.Parent = addRow
-Instance.new("UICorner", addCartBtn).CornerRadius = UDim.new(0, 6)
-
--- 5. Cart Table (Review & Edit List)
-local cartFrame = Instance.new("ScrollingFrame")
-cartFrame.Size = UDim2.new(1, 0, 0, 95) cartFrame.Position = UDim2.fromOffset(0, 146) cartFrame.BackgroundColor3 = THEME.CardBg
-cartFrame.BorderSizePixel = 0 cartFrame.CanvasSize = UDim2.fromOffset(0, 0) cartFrame.ScrollBarThickness = 3 cartFrame.Parent = mailContainer
-Instance.new("UICorner", cartFrame).CornerRadius = UDim.new(0, 8)
-local cartFrameStroke = Instance.new("UIStroke") cartFrameStroke.Color = THEME.Stroke cartFrameStroke.Parent = cartFrame
-
-local cartList = Instance.new("UIListLayout") cartList.Padding = UDim.new(0, 4) cartList.Parent = cartFrame
-local cartPadIn = Instance.new("UIPadding") cartPadIn.PaddingTop = UDim.new(0, 6) cartPadIn.PaddingLeft = UDim.new(0, 6) cartPadIn.Parent = cartFrame
-
-local function refreshCartUI()
-	for _, child in ipairs(cartFrame:GetChildren()) do if child:IsA("Frame") then child:Destroy() end end
-	for idx, entry in ipairs(MailUI.Cart) do
-		local row = Instance.new("Frame")
-		row.Size = UDim2.new(0.96, 0, 0, 26) row.BackgroundColor3 = THEME.HeaderBg row.Parent = cartFrame
-		Instance.new("UICorner", row).CornerRadius = UDim.new(0, 5)
-
-		local nameLbl = Instance.new("TextLabel")
-		nameLbl.Size = UDim2.new(0.55, 0, 1, 0) nameLbl.Position = UDim2.fromOffset(8, 0) nameLbl.BackgroundTransparency = 1
-		nameLbl.Text = entry.itemKey .. " [" .. entry.category .. "]" nameLbl.Font = Enum.Font.GothamMedium nameLbl.TextSize = 9
-		nameLbl.TextColor3 = THEME.TextMain nameLbl.TextXAlignment = Enum.TextXAlignment.Left nameLbl.Parent = row
-
-		local countBox = Instance.new("TextBox")
-		countBox.Size = UDim2.fromOffset(40, 18) countBox.Position = UDim2.new(1, -70, 0.5, -9)
-		countBox.BackgroundColor3 = THEME.CardBg countBox.Text = tostring(entry.sendCount) countBox.Font = Enum.Font.GothamBold
-		countBox.TextSize = 10 countBox.TextColor3 = THEME.Accent countBox.Parent = row
-		Instance.new("UICorner", countBox).CornerRadius = UDim.new(0, 4)
-
-		-- Strict Stock Clamping Logic
-		countBox.FocusLost:Connect(function()
-			local num = tonumber(countBox.Text) or 1
-			entry.sendCount = math.clamp(math.floor(num), 1, math.max(1, entry.maxAvailable))
-			countBox.Text = tostring(entry.sendCount)
-		end)
-
-		local delBtn = Instance.new("TextButton")
-		delBtn.Size = UDim2.fromOffset(20, 18) delBtn.Position = UDim2.new(1, -24, 0.5, -9)
-		delBtn.BackgroundColor3 = Color3.fromRGB(239, 68, 68) delBtn.Text = "✕" delBtn.Font = Enum.Font.GothamBold
-		delBtn.TextSize = 9 delBtn.TextColor3 = Color3.fromRGB(255, 255, 255) delBtn.Parent = row
-		Instance.new("UICorner", delBtn).CornerRadius = UDim.new(0, 4)
-
-		delBtn.MouseButton1Click:Connect(function() table.remove(MailUI.Cart, idx) refreshCartUI() end)
-	end
-	cartFrame.CanvasSize = UDim2.fromOffset(0, #MailUI.Cart * 30)
-end
-
--- Add to Cart with Quantity Input Validation
-addCartBtn.MouseButton1Click:Connect(function()
-	if not MailUI.SelectedItemKey then return end
-	local available = getAvailableCount(MailUI.SelectedCategory, MailUI.SelectedItemKey)
-	if available <= 0 then return end
-
-	local userQty = tonumber(qtyInputBox.Text) or 1
-	local clampedQty = math.clamp(math.floor(userQty), 1, available)
-
-	for _, entry in ipairs(MailUI.Cart) do
-		if entry.category == MailUI.SelectedCategory and entry.itemKey == MailUI.SelectedItemKey then
-			entry.sendCount = math.clamp(entry.sendCount + clampedQty, 1, available)
-			refreshCartUI()
-			return
-		end
-	end
-
-	table.insert(MailUI.Cart, {
-		category = MailUI.SelectedCategory,
-		itemKey = MailUI.SelectedItemKey,
-		sendCount = clampedQty,
-		maxAvailable = available
-	})
-	refreshCartUI()
-end)
-
--- 6. Action Bar & Status Badge
-local statusLabel = Instance.new("TextLabel")
-statusLabel.Size = UDim2.new(1, 0, 0, 14) statusLabel.Position = UDim2.fromOffset(0, 246) statusLabel.BackgroundTransparency = 1
-statusLabel.Font = Enum.Font.GothamMedium statusLabel.TextSize = 9 statusLabel.TextColor3 = THEME.TextSub statusLabel.Text = "Cart Ready (0 Items)" statusLabel.TextXAlignment = Enum.TextXAlignment.Left statusLabel.Parent = mailContainer
-
-local sendBtn = Instance.new("TextButton")
-sendBtn.Size = UDim2.new(1, 0, 0, 32) sendBtn.Position = UDim2.fromOffset(0, 262) sendBtn.BackgroundColor3 = THEME.Accent
-sendBtn.Font = Enum.Font.GothamBold sendBtn.TextSize = 11 sendBtn.TextColor3 = Color3.fromRGB(255, 255, 255) sendBtn.Text = "SEND GIFTS" sendBtn.Parent = mailContainer
-Instance.new("UICorner", sendBtn).CornerRadius = UDim.new(0, 8)
-
-sendBtn.MouseButton1Click:Connect(function()
-	if MailUI.Sending then return end
-	local recipient = recipientBox.Text
-	if recipient == "" or #MailUI.Cart == 0 then return end
-
-	MailUI.Sending = true sendBtn.Text = "SENDING..." sendBtn.BackgroundColor3 = THEME.Stroke
-	task.spawn(function()
-		local userId, lookupErr = lookupUser(recipient)
-		if not userId then
-			statusLabel.Text = "Error: " .. (lookupErr or "Lookup failed")
-			MailUI.Sending = false sendBtn.Text = "SEND GIFTS" sendBtn.BackgroundColor3 = THEME.Accent
+MailTab:CreateButton({
+	Name = "+ Add Selected Item to Cart",
+	Callback = function()
+		if not MailState.SelectedItemKey or MailState.SelectedItemKey == "Select item..." or MailState.SelectedItemKey == "No items in category" then
+			Rayfield:Notify({ Title = "Cart Error", Content = "Please pick a valid item from inventory dropdown first!", Duration = 3 })
 			return
 		end
 
-		local allLines = {}
-		for _, row in ipairs(MailUI.Cart) do
-			local lines, err = buildLinesForEntry(row.category, row.itemKey, row.sendCount)
-			if not lines then
-				statusLabel.Text = "Error: " .. (err or "Build lines failed")
-				MailUI.Sending = false sendBtn.Text = "SEND GIFTS" sendBtn.BackgroundColor3 = THEME.Accent
-				return
-			end
-			for _, line in ipairs(lines) do table.insert(allLines, line) end
+		local available = getAvailableCount(MailState.SelectedCategory, MailState.SelectedItemKey)
+		if available <= 0 then
+			Rayfield:Notify({ Title = "Stock Error", Content = "You have 0 stock for " .. MailState.SelectedItemKey, Duration = 3 })
+			return
 		end
 
-		local mails = packPayloadLines(allLines)
-		statusLabel.Text = string.format("Delivering %d items in %d mails...", #allLines, #mails)
+		local clamped = math.clamp(math.floor(MailState.InputQty), 1, available)
 
-		for i, payload in ipairs(mails) do
-			if i > 1 then task.wait(MailCfg.sendCooldownSec) end
-			local ok, err = remoteCall(Networking.Mailbox.SendBatch, userId, payload, MailCfg.note)
-			if not ok then
-				statusLabel.Text = "Error: " .. tostring(err)
-				MailUI.Sending = false sendBtn.Text = "SEND GIFTS" sendBtn.BackgroundColor3 = THEME.Accent
+		for _, entry in ipairs(MailState.Cart) do
+			if entry.category == MailState.SelectedCategory and entry.itemKey == MailState.SelectedItemKey then
+				entry.sendCount = math.clamp(entry.sendCount + clamped, 1, available)
+				updateCartParagraph()
+				Rayfield:Notify({ Title = "Cart Updated", Content = entry.itemKey .. " quantity updated to " .. entry.sendCount, Duration = 2 })
 				return
 			end
 		end
 
-		statusLabel.Text = "Gifts successfully delivered to " .. recipient .. "!"
-		table.clear(MailUI.Cart)
-		refreshCartUI()
-		MailUI.Sending = false sendBtn.Text = "SEND GIFTS" sendBtn.BackgroundColor3 = THEME.Accent
-	end)
-end)
+		table.insert(MailState.Cart, {
+			category = MailState.SelectedCategory,
+			itemKey = MailState.SelectedItemKey,
+			sendCount = clamped,
+			maxAvailable = available,
+		})
+		updateCartParagraph()
+		Rayfield:Notify({ Title = "Added to Cart", Content = MailState.SelectedItemKey .. " x" .. clamped .. " added!", Duration = 2 })
+	end,
+})
 
--- =============================================================================
--- PERFORMANCE CONTROLLER
--- =============================================================================
+MailTab:CreateButton({
+	Name = "Clear Cart",
+	Callback = function()
+		table.clear(MailState.Cart)
+		updateCartParagraph()
+		Rayfield:Notify({ Title = "Cart Cleared", Content = "All items removed from cart.", Duration = 2 })
+	end,
+})
 
-local currentFps = 60
-RunService.Heartbeat:Connect(function(dt)
-	currentFps = currentFps * 0.9 + (1 / dt) * 0.1
-	FpsText.Text = string.format("%d FPS", math.floor(currentFps))
-end)
+MailTab:CreateButton({
+	Name = "🚀 SEND GIFTS NOW",
+	Callback = function()
+		if MailState.Sending then return end
+		if MailState.Recipient == "" then
+			Rayfield:Notify({ Title = "Recipient Error", Content = "Please enter a valid Roblox username!", Duration = 3 })
+			return
+		end
+		if #MailState.Cart == 0 then
+			Rayfield:Notify({ Title = "Cart Error", Content = "Your cart is empty!", Duration = 3 })
+			return
+		end
 
-UserInputService.InputBegan:Connect(function(input, processed)
-	if processed then return end
-	if input.KeyCode == Enum.KeyCode.RightControl then ScreenGui.Enabled = not ScreenGui.Enabled end
-end)
+		MailState.Sending = true
+		Rayfield:Notify({ Title = "Processing", Content = "Looking up player " .. MailState.Recipient .. "...", Duration = 3 })
 
-print("[ArcadeHUB]: Refined UI with Category Dropdown & Quantity Input.")
+		task.spawn(function()
+			local userId, err = lookupUser(MailState.Recipient)
+			if not userId then
+				Rayfield:Notify({ Title = "Lookup Failed", Content = err or "User not found!", Duration = 4 })
+				MailState.Sending = false
+				return
+			end
+
+			local allLines = {}
+			for _, row in ipairs(MailState.Cart) do
+				local lines, lineErr = buildLinesForEntry(row.category, row.itemKey, row.sendCount)
+				if not lines then
+					Rayfield:Notify({ Title = "Build Error", Content = lineErr or "Item line error", Duration = 4 })
+					MailState.Sending = false
+					return
+				end
+				for _, line in ipairs(lines) do table.insert(allLines, line) end
+			end
+
+			local mails = packPayloadLines(allLines)
+			Rayfield:Notify({ Title = "Sending Mails", Content = string.format("Sending %d mail batch(es)...", #mails), Duration = 4 })
+
+			for i, payload in ipairs(mails) do
+				if i > 1 then task.wait(MailCfg.sendCooldownSec) end
+				local ok, sendErr = remoteCall(Networking.Mailbox.SendBatch, userId, payload, MailCfg.note)
+				if not ok then
+					Rayfield:Notify({ Title = "Send Failed", Content = tostring(sendErr), Duration = 5 })
+					MailState.Sending = false
+					return
+				end
+			end
+
+			Rayfield:Notify({ Title = "Gifting Complete!", Content = "All gifts successfully delivered to " .. MailState.Recipient, Duration = 5 })
+			table.clear(MailState.Cart)
+			updateCartParagraph()
+			MailState.Sending = false
+		end)
+	end,
+})
+
+Rayfield:Notify({
+	Title = "Garden Suite Pro V4",
+	Content = "Loaded with Rayfield Dark Theme!",
+	Duration = 4,
+})
+
+print("[Garden Suite Pro V4.0]: Rayfield Dark Theme Loaded Successfully.")
