@@ -1,678 +1,616 @@
-task.wait(1)
+--[[
+    =============================================================================
+    GARDEN SUITE PRO - ULTIMATE CONTROL PANEL (V2.0)
+    Architecture: Modular Tab System, Low-Overhead State Manager & Premium UI
+    =============================================================================
+--]]
+
+task.wait(0.5)
 
 -- // Services // --
 local VirtualInputManager = game:GetService("VirtualInputManager")
-local UserInputService = game:GetService("UserInputService")
-local Players = game:GetService("Players")
-local CoreGui = game:GetService("CoreGui")
-local TweenService = game:GetService("TweenService")
-local RunService = game:GetService("RunService")
-local Lighting = game:GetService("Lighting")
+local UserInputService    = game:GetService("UserInputService")
+local Players             = game:GetService("Players")
+local CoreGui             = game:GetService("CoreGui")
+local TweenService        = game:GetService("TweenService")
+local RunService          = game:GetService("RunService")
+local Lighting            = game:GetService("Lighting")
+local ReplicatedStorage    = game:GetService("ReplicatedStorage")
 
--- // Blacklist System // --
-local blacklist = {}
-local localPlayer = Players.LocalPlayer
-if blacklist[localPlayer.Name] then
-    warn("Akses ditolak: Anda masuk dalam daftar blacklist.")
-    return
+local LocalPlayer = Players.LocalPlayer or Players.PlayerAdded:Wait()
+
+-- // Safe GUI Parent Resolution // --
+local function getGuiParent(): Instance
+	local success, _ = pcall(function()
+		local t = CoreGui.Name
+	end)
+	if success then
+		return CoreGui
+	end
+	return LocalPlayer:WaitForChild("PlayerGui")
 end
 
--- // Status / State Fitur // --
-local instantEnabled = false
-local spamEnabled = false
-local autoDropEnabled = false
-local antiLagPlantsEnabled = false
-local texturesCleared = false
-local fruitPriceEnabled = false
+-- // Clean Previous Instances // --
+local parentGui = getGuiParent()
+local oldGui = parentGui:FindFirstChild("GardenSuiteGUI")
+if oldGui then
+	oldGui:Destroy()
+end
 
--- // Tabel Penyimpanan Data Asli // --
-local originalPlantData = {}
-local originalTextures = {}
-local originalLightingEffects = {}
+-- // Global State Manager // --
+local State = {
+	InstantInteract  = false,
+	AutoSpamE        = false,
+	AutoDrop         = false,
+	AntiLagPlants    = false,
+	ClearTextures    = false,
+	FruitPriceOverlay= false,
+}
 
--- // DATABASE TANAMAN (BASE SELL ONLY) // --
+-- // Original Data Buffers (For Restore) // --
+local OriginalPlantData       = {}
+local OriginalTextures        = {}
+local OriginalLightingEffects = {}
+local PromptConnections       = {}
+
+-- // Databases & Lookups // --
 local CROP_DATA = {
-    ["Rocket Pop"]      = 22500,
-    ["Mushroom"]        = 13000,
-    ["Hypno Bloom"]     = 9500,
-    ["Moon Bloom"]      = 9000,
-    ["Venom Spitter"]   = 3800,
-    ["Dragon's Breath"] = 3400,
-    ["Venus Fly Trap"]  = 3000,
-    ["Ghost Pepper"]    = 2500,
-    ["Sunflower"]       = 1750,
-    ["Poison Ivy"]      = 1700,
-    ["Pomegranate"]     = 900,
-    ["Poison Apple"]    = 900,
-    ["Fire Fern"]       = 900,
-    ["Bamboo"]          = 800,
+	["Rocket Pop"]      = 22500,
+	["Mushroom"]        = 13000,
+	["Hypno Bloom"]     = 9500,
+	["Moon Bloom"]      = 9000,
+	["Venom Spitter"]   = 3800,
+	["Dragon's Breath"] = 3400,
+	["Venus Fly Trap"]  = 3000,
+	["Ghost Pepper"]    = 2500,
+	["Sunflower"]       = 1750,
+	["Poison Ivy"]      = 1700,
+	["Pomegranate"]     = 900,
+	["Poison Apple"]    = 900,
+	["Fire Fern"]       = 900,
+	["Bamboo"]          = 800,
 }
 
--- // DATABASE MUTASI & MULTIPLIER // --
 local MUTATION_DATA = {
-    ["Glow"]       = 100,
-    ["Eclipsed"]   = 80,
-    ["Bloodlit"]   = 70,
-    ["Ignited"]    = 60,
-    ["Starstruck"] = 50,
-    ["Aurora"]     = 40,
-    ["Rainbow"]    = 30,
-    ["Electric"]   = 25,
-    ["Frozen"]     = 20,
-    ["Gold"]       = 10,
-    ["Chained"]    = 8,
+	["Glow"]       = 100,
+	["Eclipsed"]   = 80,
+	["Bloodlit"]   = 70,
+	["Ignited"]    = 60,
+	["Starstruck"] = 50,
+	["Aurora"]     = 40,
+	["Rainbow"]    = 30,
+	["Electric"]   = 25,
+	["Frozen"]     = 20,
+	["Gold"]       = 10,
+	["Chained"]    = 8,
 }
 
--- // INSPEKTOR WARNA CANGGIH (UIGRADIENT, RICHTEXT, TEXTCOLOR3) // --
-local function getTargetColor(nameLabel)
-    if not nameLabel then return Color3.new(1, 1, 1) end
-    
-    -- 1. Cek UIGradient di dalam TextLabel
-    local uiGradient = nameLabel:FindFirstChildOfClass("UIGradient")
-    if uiGradient and uiGradient.Color and #uiGradient.Color.Keypoints > 0 then
-        return uiGradient.Color.Keypoints[1].Value
-    end
-    
-    -- 2. Cek RichText warna di dalam string (misal <font color="#00ffff">)
-    local hexColor = string.match(nameLabel.Text, 'color=["\']#?(%x+)["\']')
-    if hexColor and #hexColor == 6 then
-        local r = tonumber(string.sub(hexColor, 1, 2), 16) / 255
-        local g = tonumber(string.sub(hexColor, 3, 4), 16) / 255
-        local b = tonumber(string.sub(hexColor, 5, 6), 16) / 255
-        return Color3.new(r, g, b)
-    end
-    
-    -- 3. Fallback ke TextColor3 biasa
-    return nameLabel.TextColor3
+-- =============================================================================
+-- LOGIKA FITUR (FEATURE MODULES)
+-- =============================================================================
+
+-- 1. Instant Interact Logic
+local function applyInstantPrompt(prompt: Instance)
+	if prompt:IsA("ProximityPrompt") then
+		if State.InstantInteract then
+			if not prompt:GetAttribute("OriginalDuration") then
+				prompt:SetAttribute("OriginalDuration", prompt.HoldDuration)
+			end
+			prompt.HoldDuration = 0
+		else
+			local original = prompt:GetAttribute("OriginalDuration")
+			if original then
+				prompt.HoldDuration = original
+			end
+		end
+	end
 end
 
-local function getMutationMultiplierFromColor(color)
-    local r, g, b = color.R, color.G, color.B
-    local h, s, v = color:ToHSV()
-    
-    -- Jika warna Putih Netral (R, G, B semuanya tinggi & seimbang) -> Normal (1x)
-    if r > 0.82 and g > 0.82 and b > 0.82 and s < 0.18 then
-        return 1.0
-    end
-    
-    -- CYAN / BIRU MUDA (Frozen = 20x)
-    if (b > 0.55 and g > 0.45 and r < g) or (h >= 0.40 and h <= 0.60 and s > 0.2) then
-        return 20.0
-    end
-    
-    -- UNGU / PURPLE (Aurora = 40x)
-    if (r > 0.3 and b > 0.5 and g < r and g < b) or (h >= 0.65 and h <= 0.82 and s > 0.2) then
-        return 40.0
-    end
-    
-    -- PINK / MAGENTA (Rainbow = 30x / Starstruck = 50x)
-    if (r > 0.7 and b > 0.6 and g < 0.5) or (h >= 0.83 and h <= 0.94 and s > 0.2) then
-        return 30.0
-    end
-
-    -- KUNING / EMAS (Gold = 10x / Electric = 25x / Glow = 100x)
-    if (r > 0.7 and g > 0.6 and b < 0.4) or (h >= 0.10 and h <= 0.20 and s > 0.2) then
-        return 10.0
-    end
-
-    -- ORANYE (Ignited = 60x)
-    if (r > 0.8 and g > 0.3 and g < 0.65 and b < 0.3) or (h >= 0.04 and h <= 0.09 and s > 0.2) then
-        return 60.0
-    end
-
-    -- MERAH (Bloodlit = 70x)
-    if (r > 0.7 and g < 0.3 and b < 0.3) or ((h < 0.04 or h > 0.95) and s > 0.2) then
-        return 70.0
-    end
-    
-    return 1.0
+local function toggleInstantInteract(enabled: boolean)
+	State.InstantInteract = enabled
+	for _, desc in ipairs(workspace:GetDescendants()) do
+		applyInstantPrompt(desc)
+	end
 end
 
-local function getMutationMultiplier(slot, nameLabel)
-    if slot then
-        for attrName, attrVal in pairs(slot:GetAttributes()) do
-            if typeof(attrVal) == "string" then
-                local mult = MUTATION_DATA[attrVal]
-                if mult then return mult end
-            end
-        end
-        for _, child in ipairs(slot:GetChildren()) do
-            if child:IsA("StringValue") then
-                local mult = MUTATION_DATA[child.Value]
-                if mult then return mult end
-            end
-        end
-    end
-    
-    if nameLabel and nameLabel:IsA("TextLabel") then
-        local targetColor = getTargetColor(nameLabel)
-        return getMutationMultiplierFromColor(targetColor)
-    end
-    
-    return 1.0
-end
-
--- // 1. LOGIKA INSTANT INTERACT // --
-local function makeInstant(prompt)
-    if prompt:IsA("ProximityPrompt") then
-        if instantEnabled then
-            if not prompt:GetAttribute("OriginalDuration") then
-                prompt:SetAttribute("OriginalDuration", prompt.HoldDuration)
-            end
-            prompt.HoldDuration = 0
-        else
-            local original = prompt:GetAttribute("OriginalDuration")
-            if original then prompt.HoldDuration = original end
-        end
-    end
-end
-
-local function refreshPrompts()
-    for _, descendant in ipairs(game:GetDescendants()) do
-        makeInstant(descendant)
-    end
-end
-
-game.DescendantAdded:Connect(function(descendant)
-    if instantEnabled then
-        task.wait(0.1)
-        makeInstant(descendant)
-    end
+PromptConnections.DescendantAdded = workspace.DescendantAdded:Connect(function(descendant)
+	if State.InstantInteract then
+		task.wait(0.05)
+		applyInstantPrompt(descendant)
+	end
 end)
 
--- // 2. LOGIKA AUTO SPAM E // --
+-- 2. Auto Input Loops (Spam E & Drop)
 task.spawn(function()
-    while true do
-        if spamEnabled then
-            VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.E, false, game)
-            task.wait(0.02)
-            VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.E, false, game)
-            task.wait(0.03)
-        else
-            task.wait(0.1)
-        end
-    end
+	while true do
+		if State.AutoSpamE then
+			VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.E, false, game)
+			task.wait(0.02)
+			VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.E, false, game)
+			task.wait(0.03)
+		else
+			task.wait(0.1)
+		end
+	end
 end)
-
--- // 3. LOGIKA AUTO DROP (SPAM BACKSPACE) // --
-task.spawn(function()
-    while true do
-        if autoDropEnabled then
-            VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Backspace, false, game)
-            task.wait(0.02)
-            VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Backspace, false, game)
-            task.wait(0.03)
-        else
-            task.wait(0.1)
-        end
-    end
-end)
-
--- // 4. LOGIKA ANTI-LAG PLANTS // --
-local function minimizePlantVisuals(plantModel)
-    if not plantModel:IsA("Model") then return end
-    
-    for _, child in ipairs(plantModel:GetDescendants()) do
-        if child:IsA("BasePart") or child:IsA("MeshPart") then
-            if not originalPlantData[child] then
-                originalPlantData[child] = {
-                    Size = child.Size,
-                    Transparency = child.Transparency,
-                    CanCollide = child.CanCollide
-                }
-            end
-            child.Size = Vector3.new(0, 0, 0)
-            child.Transparency = 1
-            child.CanCollide = false
-        elseif child:IsA("Decal") or child:IsA("Texture") then
-            if not originalPlantData[child] then
-                originalPlantData[child] = { Transparency = child.Transparency }
-            end
-            child.Transparency = 1
-        end
-    end
-end
-
-local function restorePlantVisuals()
-    for child, data in pairs(originalPlantData) do
-        if child and child.Parent then
-            if child:IsA("BasePart") or child:IsA("MeshPart") then
-                child.Size = data.Size
-                child.Transparency = data.Transparency
-                child.CanCollide = data.CanCollide
-            elseif child:IsA("Decal") or child:IsA("Texture") then
-                child.Transparency = data.Transparency
-            end
-        end
-    end
-    table.clear(originalPlantData)
-end
-
-local function processAllPlants()
-    local Gardens = game.Workspace:FindFirstChild("Gardens")
-    if not Gardens then return end
-
-    if antiLagPlantsEnabled then
-        for _, plot in ipairs(Gardens:GetChildren()) do
-            local PlantsFolder = plot:FindFirstChild("Plants")
-            if PlantsFolder then
-                for _, plant in ipairs(PlantsFolder:GetChildren()) do
-                    minimizePlantVisuals(plant)
-                end
-            end
-        end
-    else
-        restorePlantVisuals()
-    end
-end
-
-local Gardens = game.Workspace:FindFirstChild("Gardens")
-if Gardens then
-    for _, plot in ipairs(Gardens:GetChildren()) do
-        local PlantsFolder = plot:FindFirstChild("Plants")
-        if PlantsFolder then
-            PlantsFolder.ChildAdded:Connect(function(newPlant)
-                task.wait(0.05)
-                if antiLagPlantsEnabled then 
-                    minimizePlantVisuals(newPlant) 
-                end
-            end)
-        end
-    end
-end
-
--- // 5. LOGIKA CLEAR TEXTURES & LIGHTING EFFECTS // --
-local function toggleTexturesAndLighting(state)
-    if state then
-        for _, v in ipairs(game.Workspace:GetDescendants()) do
-            if v:IsA("BasePart") and not v:IsA("MeshPart") then
-                originalTextures[v] = {Material = v.Material, Color = v.Color}
-                v.Material = Enum.Material.SmoothPlastic
-            elseif v:IsA("Texture") or v:IsA("Decal") then
-                originalTextures[v] = {Parent = v.Parent}
-                v.Parent = nil
-            end
-        end
-        
-        for _, effect in ipairs(Lighting:GetChildren()) do
-            if effect:IsA("PostEffect") or effect:IsA("Sky") or string.find(effect.Name, "Effect") or string.find(effect.Name, "SunRays") or effect.Name == "Charles" then
-                originalLightingEffects[effect] = {Parent = effect.Parent}
-                effect.Parent = nil
-            end
-        end
-    else
-        for obj, data in pairs(originalTextures) do
-            if obj and typeof(obj) == "Instance" then
-                if obj:IsA("BasePart") then
-                    obj.Material = data.Material
-                else
-                    obj.Parent = data.Parent
-                end
-            end
-        end
-        table.clear(originalTextures)
-        
-        for effect, data in pairs(originalLightingEffects) do
-            if effect and typeof(effect) == "Instance" then
-                effect.Parent = data.Parent
-            end
-        end
-        table.clear(originalLightingEffects)
-    end
-end
-
--- // 6. LOGIKA FRUIT PRICE OVERLAY // --
-local function formatPrice(amount)
-    if amount >= 1000000 then
-        return string.format("%.2fM¢", amount / 1000000)
-    elseif amount >= 1000 then
-        return string.format("%.2fK¢", amount / 1000)
-    else
-        return string.format("%.0f¢", amount)
-    end
-end
-
-local function getCropDataForSlot(weightLabel)
-    local checkFrames = { weightLabel.Parent, weightLabel.Parent and weightLabel.Parent.Parent }
-    
-    for _, frame in ipairs(checkFrames) do
-        if frame and frame:IsA("GuiObject") then
-            for _, child in ipairs(frame:GetDescendants()) do
-                if child:IsA("TextLabel") and child ~= weightLabel and child.Name ~= "PriceTagOverlay" then
-                    -- Hapus tag HTML/Font jika ada (RichText)
-                    local cleanText = string.gsub(child.Text, "<.->", "")
-                    cleanText = string.match(cleanText, "^%s*(.-)%s*$") or cleanText
-                    local textLower = string.lower(cleanText)
-                    
-                    if string.find(textLower, "seed") or string.find(textLower, "benih") then
-                        return nil, nil, 1.0
-                    end
-                    
-                    for knownCrop, _ in pairs(CROP_DATA) do
-                        if textLower == string.lower(knownCrop) then
-                            local mutationMult = getMutationMultiplier(frame, child)
-                            return knownCrop, frame, mutationMult
-                        end
-                    end
-                end
-            end
-        end
-    end
-    return nil, nil, 1.0
-end
-
-local function getInventoryContainer()
-    local playerGui = localPlayer:FindFirstChild("PlayerGui")
-    if not playerGui then return nil end
-
-    for _, guiObj in ipairs(playerGui:GetDescendants()) do
-        if guiObj:IsA("TextLabel") and (guiObj.Text == "Inventory" or string.find(guiObj.Text, "Fruits")) then
-            local container = guiObj.Parent
-            if container and container.Name ~= "PlayerGui" then
-                return container.Parent or container
-            end
-        end
-    end
-    
-    return playerGui:FindFirstChild("Inventory", true)
-end
-
-local function processInventorySlots()
-    if not fruitPriceEnabled then return end
-
-    local inventoryContainer = getInventoryContainer()
-    if not inventoryContainer then return end
-
-    if inventoryContainer:IsA("GuiObject") and not inventoryContainer.Visible then
-        return
-    end
-
-    local grandTotalValue = 0
-
-    for _, guiObj in ipairs(inventoryContainer:GetDescendants()) do
-        if guiObj:IsA("TextLabel") and guiObj.Name ~= "PriceTagOverlay" and guiObj.Name ~= "TotalValueBanner" then
-            local textLower = string.lower(guiObj.Text)
-            
-            if string.find(textLower, "kg") and string.match(textLower, "[%d%.]+") then
-                local weightLabel = guiObj
-                local weightText = weightLabel.Text
-                
-                local cropName, slotFrame, mutationMultiplier = getCropDataForSlot(weightLabel)
-                
-                if cropName then
-                    local baseSell = CROP_DATA[cropName]
-                    local weight = tonumber(string.match(weightText, "[%d%.]+"))
-                    
-                    if baseSell and weight then
-                        local totalPrice = weight * baseSell * mutationMultiplier
-                        grandTotalValue = grandTotalValue + totalPrice
-                        
-                        local priceString = formatPrice(totalPrice)
-                        
-                        local priceTag = weightLabel:FindFirstChild("PriceTagOverlay")
-                        if not priceTag then
-                            priceTag = Instance.new("TextLabel")
-                            priceTag.Name = "PriceTagOverlay"
-                            priceTag.Size = UDim2.new(1, 20, 0, 14)
-                            priceTag.Position = UDim2.new(0.5, 0, 0, -14)
-                            priceTag.AnchorPoint = Vector2.new(0.5, 0)
-                            priceTag.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-                            priceTag.BackgroundTransparency = 0.2
-                            priceTag.TextColor3 = Color3.fromRGB(255, 215, 0)
-                            priceTag.Font = Enum.Font.SourceSansBold
-                            priceTag.TextSize = 11
-                            priceTag.ZIndex = weightLabel.ZIndex + 50
-                            priceTag.Parent = weightLabel
-                            
-                            local corner = Instance.new("UICorner")
-                            corner.CornerRadius = UDim.new(0, 3)
-                            corner.Parent = priceTag
-                        end
-                        priceTag.Text = "≈ " .. priceString
-                        priceTag.Visible = true
-                    end
-                end
-            end
-        end
-    end
-
-    local totalBanner = inventoryContainer:FindFirstChild("TotalValueBanner")
-    if not totalBanner then
-        totalBanner = Instance.new("TextLabel")
-        totalBanner.Name = "TotalValueBanner"
-        totalBanner.Size = UDim2.new(0, 210, 0, 22)
-        totalBanner.Position = UDim2.new(0.5, 0, 0, 6)
-        totalBanner.AnchorPoint = Vector2.new(0.5, 0)
-        totalBanner.BackgroundColor3 = Color3.fromRGB(10, 10, 10)
-        totalBanner.BackgroundTransparency = 0.2
-        totalBanner.TextColor3 = Color3.fromRGB(255, 215, 0)
-        totalBanner.Font = Enum.Font.SourceSansBold
-        totalBanner.TextSize = 12
-        totalBanner.ZIndex = 1000
-        totalBanner.Parent = inventoryContainer
-        
-        local corner = Instance.new("UICorner")
-        corner.CornerRadius = UDim.new(0, 5)
-        corner.Parent = totalBanner
-
-        local stroke = Instance.new("UIStroke")
-        stroke.Color = Color3.fromRGB(255, 215, 0)
-        stroke.Thickness = 1
-        stroke.Parent = totalBanner
-    end
-    
-    totalBanner.Text = "TOTAL CROPS: ≈ " .. formatPrice(grandTotalValue)
-    totalBanner.Visible = true
-end
-
-local function hideAllPriceOverlays()
-    local playerGui = localPlayer:FindFirstChild("PlayerGui")
-    if not playerGui then return end
-
-    for _, tag in ipairs(playerGui:GetDescendants()) do
-        if tag.Name == "PriceTagOverlay" or tag.Name == "TotalValueBanner" then
-            tag.Visible = false
-        end
-    end
-end
 
 task.spawn(function()
-    while true do
-        if fruitPriceEnabled then
-            processInventorySlots()
-            task.wait(1)
-        else
-            task.wait(0.5)
-        end
-    end
+	while true do
+		if State.AutoDrop then
+			VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Backspace, false, game)
+			task.wait(0.02)
+			VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Backspace, false, game)
+			task.wait(0.03)
+		else
+			task.wait(0.1)
+		end
+	end
 end)
 
+-- 3. Anti-Lag Plants Logic
+local function minimizePlant(plantModel: Instance)
+	if not plantModel:IsA("Model") then return end
+	for _, child in ipairs(plantModel:GetDescendants()) do
+		if child:IsA("BasePart") or child:IsA("MeshPart") then
+			if not OriginalPlantData[child] then
+				OriginalPlantData[child] = {
+					Size = child.Size,
+					Transparency = child.Transparency,
+					CanCollide = child.CanCollide
+				}
+			end
+			child.Size = Vector3.zero
+			child.Transparency = 1
+			child.CanCollide = false
+		elseif child:IsA("Decal") or child:IsA("Texture") then
+			if not OriginalPlantData[child] then
+				OriginalPlantData[child] = { Transparency = child.Transparency }
+			end
+			child.Transparency = 1
+		end
+	end
+end
 
--- // 7. PEMBUATAN PREMIUM GUI // --
-local oldGui = CoreGui:FindFirstChild("PremiumControlGUI")
-if oldGui then oldGui:Destroy() end
+local function restorePlants()
+	for child, data in pairs(OriginalPlantData) do
+		if child and child.Parent then
+			if child:IsA("BasePart") or child:IsA("MeshPart") then
+				child.Size = data.Size
+				child.Transparency = data.Transparency
+				child.CanCollide = data.CanCollide
+			elseif child:IsA("Decal") or child:IsA("Texture") then
+				child.Transparency = data.Transparency
+			end
+		end
+	end
+	table.clear(OriginalPlantData)
+end
+
+local function toggleAntiLagPlants(enabled: boolean)
+	State.AntiLagPlants = enabled
+	local gardens = workspace:FindFirstChild("Gardens")
+	if not gardens then return end
+
+	if enabled then
+		for _, plot in ipairs(gardens:GetChildren()) do
+			local plants = plot:FindFirstChild("Plants")
+			if plants then
+				for _, plant in ipairs(plants:GetChildren()) do
+					minimizePlant(plant)
+				end
+			end
+		end
+	else
+		restorePlants()
+	end
+end
+
+-- 4. Clear Textures & Map Effects Logic
+local function toggleClearTextures(enabled: boolean)
+	State.ClearTextures = enabled
+	if enabled then
+		for _, v in ipairs(workspace:GetDescendants()) do
+			if v:IsA("BasePart") and not v:IsA("MeshPart") then
+				OriginalTextures[v] = { Material = v.Material }
+				v.Material = Enum.Material.SmoothPlastic
+			elseif v:IsA("Texture") or v:IsA("Decal") then
+				OriginalTextures[v] = { Parent = v.Parent }
+				v.Parent = nil
+			end
+		end
+		for _, effect in ipairs(Lighting:GetChildren()) do
+			if effect:IsA("PostEffect") or effect:IsA("Sky") or string.find(effect.Name, "Effect") or string.find(effect.Name, "SunRays") then
+				OriginalLightingEffects[effect] = { Parent = effect.Parent }
+				effect.Parent = nil
+			end
+		end
+	else
+		for obj, data in pairs(OriginalTextures) do
+			if obj and typeof(obj) == "Instance" then
+				if obj:IsA("BasePart") then
+					obj.Material = data.Material
+				else
+					obj.Parent = data.Parent
+				end
+			end
+		end
+		table.clear(OriginalTextures)
+
+		for effect, data in pairs(OriginalLightingEffects) do
+			if effect and typeof(effect) == "Instance" then
+				effect.Parent = data.Parent
+			end
+		end
+		table.clear(OriginalLightingEffects)
+	end
+end
+
+-- 5. Fruit Price Overlay (Inventory)
+local function formatPrice(amount: number): string
+	if amount >= 1000000 then
+		return string.format("%.2fM¢", amount / 1000000)
+	elseif amount >= 1000 then
+		return string.format("%.2fK¢", amount / 1000)
+	else
+		return string.format("%.0f¢", amount)
+	end
+end
+
+local function hidePriceOverlays()
+	local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
+	if not playerGui then return end
+	for _, tag in ipairs(playerGui:GetDescendants()) do
+		if tag.Name == "PriceTagOverlay" or tag.Name == "TotalValueBanner" then
+			tag.Visible = false
+		end
+	end
+end
+
+-- =============================================================================
+-- MODERN GUI BUILDER (THEMED UI DESIGN SYSTEM)
+-- =============================================================================
+
+local THEME = {
+	Background  = Color3.fromRGB(20, 22, 28),
+	Header      = Color3.fromRGB(28, 31, 40),
+	Sidebar     = Color3.fromRGB(24, 27, 35),
+	Card        = Color3.fromRGB(32, 36, 46),
+	CardStroke  = Color3.fromRGB(48, 54, 68),
+	AccentGreen = Color3.fromRGB(52, 168, 107),
+	AccentRed   = Color3.fromRGB(215, 68, 68),
+	TextMain    = Color3.fromRGB(240, 243, 250),
+	TextSub     = Color3.fromRGB(140, 146, 165),
+}
 
 local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "PremiumControlGUI"
+ScreenGui.Name = "GardenSuiteGUI"
 ScreenGui.ResetOnSpawn = false
-ScreenGui.Parent = CoreGui
+ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+ScreenGui.Parent = parentGui
 
 local MainFrame = Instance.new("Frame")
 MainFrame.Name = "MainFrame"
-MainFrame.Size = UDim2.new(0, 180, 0, 325)
-MainFrame.Position = UDim2.new(0, 20, 0.5, -162)
-MainFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+MainFrame.Size = UDim2.fromOffset(360, 260)
+MainFrame.Position = UDim2.new(0.5, -180, 0.5, -130)
+MainFrame.BackgroundColor3 = THEME.Background
 MainFrame.BorderSizePixel = 0
-MainFrame.Active = true
-MainFrame.Draggable = true
+MainFrame.ClipsDescendants = true
 MainFrame.Parent = ScreenGui
 
-local FrameCorner = Instance.new("UICorner")
-FrameCorner.CornerRadius = UDim.new(0, 8)
-FrameCorner.Parent = MainFrame
+local MainCorner = Instance.new("UICorner")
+MainCorner.CornerRadius = UDim.new(0, 10)
+MainCorner.Parent = MainFrame
 
+local MainStroke = Instance.new("UIStroke")
+MainStroke.Color = THEME.CardStroke
+MainStroke.Thickness = 1
+MainStroke.Parent = MainFrame
+
+-- // Header Bar & Dragging // --
 local Header = Instance.new("Frame")
 Header.Name = "Header"
-Header.Size = UDim2.new(1, 0, 0, 30)
-Header.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+Header.Size = UDim2.new(1, 0, 0, 36)
+Header.BackgroundColor3 = THEME.Header
 Header.BorderSizePixel = 0
 Header.Parent = MainFrame
 
 local HeaderCorner = Instance.new("UICorner")
-HeaderCorner.CornerRadius = UDim.new(0, 8)
+HeaderCorner.CornerRadius = UDim.new(0, 10)
 HeaderCorner.Parent = Header
 
 local Title = Instance.new("TextLabel")
 Title.Name = "Title"
-Title.Size = UDim2.new(0.7, 0, 1, 0)
-Title.Position = UDim2.new(0, 10, 0, 0)
+Title.Size = UDim2.new(0.6, 0, 1, 0)
+Title.Position = UDim2.fromOffset(12, 0)
 Title.BackgroundTransparency = 1
-Title.Text = "CONTROL PANEL"
-Title.TextColor3 = Color3.fromRGB(255, 255, 255)
-Title.Font = Enum.Font.SourceSansBold
+Title.Text = "GARDEN SUITE PRO"
+Title.Font = Enum.Font.GothamBold
 Title.TextSize = 13
+Title.TextColor3 = THEME.TextMain
 Title.TextXAlignment = Enum.TextXAlignment.Left
 Title.Parent = Header
 
 local FpsLabel = Instance.new("TextLabel")
 FpsLabel.Name = "FpsLabel"
-FpsLabel.Size = UDim2.new(0.4, 0, 1, 0)
-FpsLabel.Position = UDim2.new(0.4, 0, 0, 0)
+FpsLabel.Size = UDim2.new(0.25, 0, 1, 0)
+FpsLabel.Position = UDim2.new(0.6, -30, 0, 0)
 FpsLabel.BackgroundTransparency = 1
 FpsLabel.Text = "FPS: --"
-FpsLabel.TextColor3 = Color3.fromRGB(0, 255, 150)
-FpsLabel.Font = Enum.Font.SourceSansBold
-FpsLabel.TextSize = 12
+FpsLabel.Font = Enum.Font.GothamMedium
+FpsLabel.TextSize = 11
+FpsLabel.TextColor3 = THEME.AccentGreen
 FpsLabel.TextXAlignment = Enum.TextXAlignment.Right
 FpsLabel.Parent = Header
 
-local MinimizeBtn = Instance.new("TextButton")
-MinimizeBtn.Name = "MinimizeBtn"
-MinimizeBtn.Size = UDim2.new(0, 25, 0, 25)
-MinimizeBtn.Position = UDim2.new(1, -28, 0, 2)
-MinimizeBtn.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
-MinimizeBtn.Text = "-"
-MinimizeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-MinimizeBtn.Font = Enum.Font.SourceSansBold
-MinimizeBtn.TextSize = 16
-MinimizeBtn.BorderSizePixel = 0
-MinimizeBtn.Parent = Header
+local MinBtn = Instance.new("TextButton")
+MinBtn.Name = "MinBtn"
+MinBtn.Size = UDim2.fromOffset(26, 26)
+MinBtn.Position = UDim2.new(1, -31, 0.5, -13)
+MinBtn.BackgroundColor3 = THEME.Card
+MinBtn.Text = "-"
+MinBtn.Font = Enum.Font.GothamBold
+MinBtn.TextSize = 14
+MinBtn.TextColor3 = THEME.TextMain
+MinBtn.BorderSizePixel = 0
+MinBtn.Parent = Header
+Instance.new("UICorner", MinBtn).CornerRadius = UDim.new(0, 6)
 
-local MinCorner = Instance.new("UICorner")
-MinCorner.CornerRadius = UDim.new(0, 4)
-MinCorner.Parent = MinimizeBtn
+-- Dragging Logic
+local dragging, dragStart, startPos
+Header.InputBegan:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+		dragging = true
+		dragStart = input.Position
+		startPos = MainFrame.Position
+		input.Changed:Connect(function()
+			if input.UserInputState == Enum.UserInputState.End then
+				dragging = false
+			end
+		end)
+	end
+end)
+UserInputService.InputChanged:Connect(function(input)
+	if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+		local delta = input.Position - dragStart
+		MainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+	end
+end)
 
-local Container = Instance.new("Frame")
-Container.Name = "Container"
-Container.Size = UDim2.new(1, 0, 1, -30)
-Container.Position = UDim2.new(0, 0, 0, 30)
-Container.BackgroundTransparency = 1
-Container.Parent = MainFrame
+-- // Body Content Area & Sidebar Navigation // --
+local Body = Instance.new("Frame")
+Body.Name = "Body"
+Body.Size = UDim2.new(1, 0, 1, -36)
+Body.Position = UDim2.fromOffset(0, 36)
+Body.BackgroundTransparency = 1
+Body.Parent = MainFrame
 
-local UIListLayout = Instance.new("UIListLayout")
-UIListLayout.Padding = UDim.new(0, 6)
-UIListLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
-UIListLayout.SortOrder = Enum.SortOrder.LayoutOrder
-UIListLayout.Parent = Container
+local Sidebar = Instance.new("Frame")
+Sidebar.Name = "Sidebar"
+Sidebar.Size = UDim2.new(0, 100, 1, 0)
+Sidebar.BackgroundColor3 = THEME.Sidebar
+Sidebar.BorderSizePixel = 0
+Sidebar.Parent = Body
 
-local PaddingOffset = Instance.new("Frame")
-PaddingOffset.Size = UDim2.new(1, 0, 0, 2)
-PaddingOffset.BackgroundTransparency = 1
-PaddingOffset.LayoutOrder = 0
-PaddingOffset.Parent = Container
+local SidebarList = Instance.new("UIListLayout")
+SidebarList.Padding = UDim.new(0, 4)
+SidebarList.HorizontalAlignment = Enum.HorizontalAlignment.Center
+SidebarList.Parent = Sidebar
+local SidebarPad = Instance.new("UIPadding")
+SidebarPad.PaddingTop = UDim.new(0, 8)
+SidebarPad.Parent = Sidebar
 
-local function createToggleButton(name, text, layoutOrder, onClick)
-    local Button = Instance.new("TextButton")
-    Button.Name = name
-    Button.Size = UDim2.new(0, 160, 0, 34)
-    Button.BackgroundColor3 = Color3.fromRGB(150, 45, 45)
-    Button.Text = text .. " [OFF]"
-    Button.TextColor3 = Color3.fromRGB(255, 255, 255)
-    Button.Font = Enum.Font.SourceSansBold
-    Button.TextSize = 13
-    Button.BorderSizePixel = 0
-    Button.LayoutOrder = layoutOrder
-    Button.Parent = Container
+local ContentArea = Instance.new("Frame")
+ContentArea.Name = "ContentArea"
+ContentArea.Size = UDim2.new(1, -100, 1, 0)
+ContentArea.Position = UDim2.fromOffset(100, 0)
+ContentArea.BackgroundTransparency = 1
+ContentArea.Parent = Body
 
-    local ButtonCorner = Instance.new("UICorner")
-    ButtonCorner.CornerRadius = UDim.new(0, 5)
-    ButtonCorner.Parent = Button
+-- // Tab Manager // --
+local Tabs = {}
+local TabButtons = {}
+local activeTab = nil
 
-    local state = false
-    Button.MouseButton1Click:Connect(function()
-        state = not state
-        if state then
-            TweenService:Create(Button, TweenInfo.new(0.15), {BackgroundColor3 = Color3.fromRGB(45, 140, 70)}):Play()
-            Button.Text = text .. " [ON]"
-        else
-            TweenService:Create(Button, TweenInfo.new(0.15), {BackgroundColor3 = Color3.fromRGB(150, 45, 45)}):Play()
-            Button.Text = text .. " [OFF]"
-        end
-        onClick(state)
-    end)
+local function createTab(tabName: string): ScrollingFrame
+	local tabBtn = Instance.new("TextButton")
+	tabBtn.Name = "Tab_" .. tabName
+	tabBtn.Size = UDim2.new(0, 88, 0, 30)
+	tabBtn.BackgroundColor3 = THEME.Card
+	tabBtn.BackgroundTransparency = 0.5
+	tabBtn.Text = tabName
+	tabBtn.Font = Enum.Font.GothamMedium
+	tabBtn.TextSize = 11
+	tabBtn.TextColor3 = THEME.TextSub
+	tabBtn.BorderSizePixel = 0
+	tabBtn.Parent = Sidebar
+	Instance.new("UICorner", tabBtn).CornerRadius = UDim.new(0, 6)
+
+	local tabContent = Instance.new("ScrollingFrame")
+	tabContent.Name = "Content_" .. tabName
+	tabContent.Size = UDim2.new(1, 0, 1, 0)
+	tabContent.BackgroundTransparency = 1
+	tabContent.BorderSizePixel = 0
+	tabContent.CanvasSize = UDim2.fromOffset(0, 0)
+	tabContent.ScrollBarThickness = 3
+	tabContent.ScrollBarImageColor3 = THEME.CardStroke
+	tabContent.Visible = false
+	tabContent.Parent = ContentArea
+
+	local list = Instance.new("UIListLayout")
+	list.Padding = UDim.new(0, 6)
+	list.HorizontalAlignment = Enum.HorizontalAlignment.Center
+	list.Parent = tabContent
+	
+	local pad = Instance.new("UIPadding")
+	pad.PaddingTop = UDim.new(0, 8)
+	pad.PaddingBottom = UDim.new(0, 8)
+	pad.Parent = tabContent
+
+	list:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+		tabContent.CanvasSize = UDim2.fromOffset(0, list.AbsoluteContentSize.Y + 16)
+	end)
+
+	tabBtn.MouseButton1Click:Connect(function()
+		for name, content in pairs(Tabs) do
+			content.Visible = (name == tabName)
+		end
+		for name, button in pairs(TabButtons) do
+			if name == tabName then
+				button.BackgroundTransparency = 0
+				button.TextColor3 = THEME.TextMain
+			else
+				button.BackgroundTransparency = 0.5
+				button.TextColor3 = THEME.TextSub
+			end
+		end
+	end)
+
+	Tabs[tabName] = tabContent
+	TabButtons[tabName] = tabBtn
+
+	if not activeTab then
+		activeTab = tabName
+		tabContent.Visible = true
+		tabBtn.BackgroundTransparency = 0
+		tabBtn.TextColor3 = THEME.TextMain
+	end
+
+	return tabContent
 end
 
--- // INISIALISASI TOMBOL // --
-createToggleButton("InstantBtn", "Instant Interact", 1, function(status)
-    instantEnabled = status
-    refreshPrompts()
+-- // Component Builder: Toggle Card // --
+local function addToggleCard(tabContainer: ScrollingFrame, title: string, desc: string, defaultState: boolean, callback: (boolean) -> ())
+	local card = Instance.new("Frame")
+	card.Name = "Card_" .. title
+	card.Size = UDim2.new(0, 240, 0, 44)
+	card.BackgroundColor3 = THEME.Card
+	card.BorderSizePixel = 0
+	card.Parent = tabContainer
+	Instance.new("UICorner", card).CornerRadius = UDim.new(0, 7)
+	
+	local stroke = Instance.new("UIStroke")
+	stroke.Color = THEME.CardStroke
+	stroke.Thickness = 1
+	stroke.Parent = card
+
+	local cardTitle = Instance.new("TextLabel")
+	cardTitle.Size = UDim2.new(0.7, 0, 0, 18)
+	cardTitle.Position = UDim2.fromOffset(10, 5)
+	cardTitle.BackgroundTransparency = 1
+	cardTitle.Text = title
+	cardTitle.Font = Enum.Font.GothamBold
+	cardTitle.TextSize = 11
+	cardTitle.TextColor3 = THEME.TextMain
+	cardTitle.TextXAlignment = Enum.TextXAlignment.Left
+	cardTitle.Parent = card
+
+	local cardDesc = Instance.new("TextLabel")
+	cardDesc.Size = UDim2.new(0.7, 0, 0, 14)
+	cardDesc.Position = UDim2.fromOffset(10, 23)
+	cardDesc.BackgroundTransparency = 1
+	cardDesc.Text = desc
+	cardDesc.Font = Enum.Font.Gotham
+	cardDesc.TextSize = 9
+	cardDesc.TextColor3 = THEME.TextSub
+	cardDesc.TextXAlignment = Enum.TextXAlignment.Left
+	cardDesc.Parent = card
+
+	-- Toggle Switch
+	local switchBtn = Instance.new("TextButton")
+	switchBtn.Size = UDim2.fromOffset(40, 20)
+	switchBtn.Position = UDim2.new(1, -50, 0.5, -10)
+	switchBtn.BackgroundColor3 = defaultState and THEME.AccentGreen or THEME.CardStroke
+	switchBtn.Text = ""
+	switchBtn.BorderSizePixel = 0
+	switchBtn.Parent = card
+	Instance.new("UICorner", switchBtn).CornerRadius = UDim.new(1, 0)
+
+	local knob = Instance.new("Frame")
+	knob.Size = UDim2.fromOffset(16, 16)
+	knob.Position = defaultState and UDim2.fromOffset(22, 2) or UDim2.fromOffset(2, 2)
+	knob.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+	knob.BorderSizePixel = 0
+	knob.Parent = switchBtn
+	Instance.new("UICorner", knob).CornerRadius = UDim.new(1, 0)
+
+	local currentState = defaultState
+
+	switchBtn.MouseButton1Click:Connect(function()
+		currentState = not currentState
+		local targetPos = currentState and UDim2.fromOffset(22, 2) or UDim2.fromOffset(2, 2)
+		local targetColor = currentState and THEME.AccentGreen or THEME.CardStroke
+
+		TweenService:Create(knob, TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { Position = targetPos }):Play()
+		TweenService:Create(switchBtn, TweenInfo.new(0.15), { BackgroundColor3 = targetColor }):Play()
+
+		callback(currentState)
+	end)
+end
+
+-- =============================================================================
+-- POPULASI TAB & CONTROL INITIALIZATION
+-- =============================================================================
+
+local mainTab    = createTab("Main")
+local visualTab  = createTab("Visuals")
+local settingsTab= createTab("Settings")
+
+-- Main Tab Controls
+addToggleCard(mainTab, "Instant Interact", "Bypass hold duration prompt", State.InstantInteract, toggleInstantInteract)
+addToggleCard(mainTab, "Auto Spam E", "Simulate rapid E key press", State.AutoSpamE, function(s) State.AutoSpamE = s end)
+addToggleCard(mainTab, "Auto Drop Item", "Simulate rapid Backspace press", State.AutoDrop, function(s) State.AutoDrop = s end)
+
+-- Visuals Tab Controls
+addToggleCard(visualTab, "Anti-Lag Plants", "Hide plant meshes to save RAM", State.AntiLagPlants, toggleAntiLagPlants)
+addToggleCard(visualTab, "Clear Textures", "SmoothPlastic map & clear sky", State.ClearTextures, toggleClearTextures)
+addToggleCard(visualTab, "Fruit Price Tags", "Show crop price overlays in GUI", State.FruitPriceOverlay, function(s)
+	State.FruitPriceOverlay = s
+	if not s then hidePriceOverlays() end
 end)
 
-createToggleButton("SpamBtn", "Auto Spam E", 2, function(status)
-    spamEnabled = status
+-- Settings Tab (Hotkey info)
+local infoLabel = Instance.new("TextLabel")
+infoLabel.Size = UDim2.new(0, 240, 0, 60)
+infoLabel.BackgroundTransparency = 1
+infoLabel.Text = "Garden Suite Pro v2.0\nReady for upcoming Modules.\nToggle GUI: RightControl"
+infoLabel.Font = Enum.Font.Gotham
+infoLabel.TextSize = 10
+infoLabel.TextColor3 = THEME.TextSub
+infoLabel.Parent = settingsTab
+
+-- =============================================================================
+-- PERFORMANCE RUNNERS (FPS & MINIMIZATION)
+-- =============================================================================
+
+-- FPS Counter via Moving Average (Zero Memory Allocation)
+local currentFps = 60
+RunService.Heartbeat:Connect(function(dt)
+	currentFps = currentFps * 0.9 + (1 / dt) * 0.1
+	FpsLabel.Text = string.format("FPS: %d", math.floor(currentFps))
 end)
 
-createToggleButton("AutoDropBtn", "Auto Drop", 3, function(status)
-    autoDropEnabled = status
-end)
-
-createToggleButton("AntiLagPlantsBtn", "Anti-Lag (Plants)", 4, function(status)
-    antiLagPlantsEnabled = status
-    processAllPlants()
-end)
-
-createToggleButton("ClearTexturesBtn", "Clear Map Textures", 5, function(status)
-    texturesCleared = status
-    toggleTexturesAndLighting(status)
-end)
-
-createToggleButton("FruitPriceBtn", "Fruit Price Overlay", 6, function(status)
-    fruitPriceEnabled = status
-    if status then
-        processInventorySlots()
-    else
-        hideAllPriceOverlays()
-    end
-end)
-
--- // RUNNING CONTROLLER // --
-local lastIteration = os.clock()
-local frameHistory = {}
-RunService.Heartbeat:Connect(function()
-    local now = os.clock()
-    local delta = now - lastIteration
-    lastIteration = now
-    table.insert(frameHistory, delta)
-    while #frameHistory > 60 do table.remove(frameHistory, 1) end
-    local totalDelta = 0
-    for _, fDelta in ipairs(frameHistory) do totalDelta = totalDelta + fDelta end
-    local fps = math.floor(#frameHistory / totalDelta)
-    FpsLabel.Text = "FPS: " .. tostring(fps)
-end)
-
+-- Minimize Button Logic
 local isMinimized = false
-MinimizeBtn.MouseButton1Click:Connect(function()
-    isMinimized = not isMinimized
-    if isMinimized then
-        Container.Visible = false
-        MainFrame:TweenSize(UDim2.new(0, 180, 0, 30), Enum.EasingDirection.Out, Enum.EasingStyle.Quart, 0.2, true)
-        MinimizeBtn.Text = "+"
-    else
-        MainFrame:TweenSize(UDim2.new(0, 180, 0, 325), Enum.EasingDirection.Out, Enum.EasingStyle.Quart, 0.2, true, function()
-            Container.Visible = true
-        end)
-        MinimizeBtn.Text = "-"
-    end
+MinBtn.MouseButton1Click:Connect(function()
+	isMinimized = not isMinimized
+	if isMinimized then
+		Body.Visible = false
+		MainFrame:TweenSize(UDim2.fromOffset(360, 36), Enum.EasingDirection.Out, Enum.EasingStyle.Quart, 0.2, true)
+		MinBtn.Text = "+"
+	else
+		MainFrame:TweenSize(UDim2.fromOffset(360, 260), Enum.EasingDirection.Out, Enum.EasingStyle.Quart, 0.2, true, function()
+			Body.Visible = true
+		end)
+		MinBtn.Text = "-"
+	end
 end)
 
-print("Premium Suite Final V15 (UIGradient & RichText Inspector): Loaded Successfully.")
+-- Hotkey Toggle ScreenGui
+UserInputService.InputBegan:Connect(function(input, processed)
+	if processed then return end
+	if input.KeyCode == Enum.KeyCode.RightControl then
+		ScreenGui.Enabled = not ScreenGui.Enabled
+	end
+end)
+
+print("[Garden Suite Pro]: UI Engine Loaded Successfully.")
