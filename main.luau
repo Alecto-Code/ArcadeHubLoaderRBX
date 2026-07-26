@@ -1,6 +1,6 @@
 --[[
     =============================================================================
-    GARDEN SUITE PRO - ULTIMATE CONTROL PANEL (V2.0)
+    GARDEN SUITE PRO - ULTIMATE CONTROL PANEL (V2.1)
     Architecture: Modular Tab System, Low-Overhead State Manager & Premium UI
     =============================================================================
 --]]
@@ -15,7 +15,6 @@ local CoreGui             = game:GetService("CoreGui")
 local TweenService        = game:GetService("TweenService")
 local RunService          = game:GetService("RunService")
 local Lighting            = game:GetService("Lighting")
-local ReplicatedStorage    = game:GetService("ReplicatedStorage")
 
 local LocalPlayer = Players.LocalPlayer or Players.PlayerAdded:Wait()
 
@@ -44,7 +43,6 @@ local State = {
 	AutoDrop         = false,
 	AntiLagPlants    = false,
 	ClearTextures    = false,
-	FruitPriceOverlay= false,
 }
 
 -- // Original Data Buffers (For Restore) // --
@@ -52,38 +50,6 @@ local OriginalPlantData       = {}
 local OriginalTextures        = {}
 local OriginalLightingEffects = {}
 local PromptConnections       = {}
-
--- // Databases & Lookups // --
-local CROP_DATA = {
-	["Rocket Pop"]      = 22500,
-	["Mushroom"]        = 13000,
-	["Hypno Bloom"]     = 9500,
-	["Moon Bloom"]      = 9000,
-	["Venom Spitter"]   = 3800,
-	["Dragon's Breath"] = 3400,
-	["Venus Fly Trap"]  = 3000,
-	["Ghost Pepper"]    = 2500,
-	["Sunflower"]       = 1750,
-	["Poison Ivy"]      = 1700,
-	["Pomegranate"]     = 900,
-	["Poison Apple"]    = 900,
-	["Fire Fern"]       = 900,
-	["Bamboo"]          = 800,
-}
-
-local MUTATION_DATA = {
-	["Glow"]       = 100,
-	["Eclipsed"]   = 80,
-	["Bloodlit"]   = 70,
-	["Ignited"]    = 60,
-	["Starstruck"] = 50,
-	["Aurora"]     = 40,
-	["Rainbow"]    = 30,
-	["Electric"]   = 25,
-	["Frozen"]     = 20,
-	["Gold"]       = 10,
-	["Chained"]    = 8,
-}
 
 -- =============================================================================
 -- LOGIKA FITUR (FEATURE MODULES)
@@ -242,27 +208,6 @@ local function toggleClearTextures(enabled: boolean)
 			end
 		end
 		table.clear(OriginalLightingEffects)
-	end
-end
-
--- 5. Fruit Price Overlay (Inventory)
-local function formatPrice(amount: number): string
-	if amount >= 1000000 then
-		return string.format("%.2fM¢", amount / 1000000)
-	elseif amount >= 1000 then
-		return string.format("%.2fK¢", amount / 1000)
-	else
-		return string.format("%.0f¢", amount)
-	end
-end
-
-local function hidePriceOverlays()
-	local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
-	if not playerGui then return end
-	for _, tag in ipairs(playerGui:GetDescendants()) do
-		if tag.Name == "PriceTagOverlay" or tag.Name == "TotalValueBanner" then
-			tag.Visible = false
-		end
 	end
 end
 
@@ -563,16 +508,12 @@ addToggleCard(mainTab, "Auto Drop Item", "Simulate rapid Backspace press", State
 -- Visuals Tab Controls
 addToggleCard(visualTab, "Anti-Lag Plants", "Hide plant meshes to save RAM", State.AntiLagPlants, toggleAntiLagPlants)
 addToggleCard(visualTab, "Clear Textures", "SmoothPlastic map & clear sky", State.ClearTextures, toggleClearTextures)
-addToggleCard(visualTab, "Fruit Price Tags", "Show crop price overlays in GUI", State.FruitPriceOverlay, function(s)
-	State.FruitPriceOverlay = s
-	if not s then hidePriceOverlays() end
-end)
 
 -- Settings Tab (Hotkey info)
 local infoLabel = Instance.new("TextLabel")
 infoLabel.Size = UDim2.new(0, 240, 0, 60)
 infoLabel.BackgroundTransparency = 1
-infoLabel.Text = "Garden Suite Pro v2.0\nReady for upcoming Modules.\nToggle GUI: RightControl"
+infoLabel.Text = "Garden Suite Pro v2.1\nReady for upcoming Modules.\nToggle GUI: RightControl"
 infoLabel.Font = Enum.Font.Gotham
 infoLabel.TextSize = 10
 infoLabel.TextColor3 = THEME.TextSub
@@ -613,4 +554,4 @@ UserInputService.InputBegan:Connect(function(input, processed)
 	end
 end)
 
-print("[Garden Suite Pro]: UI Engine Loaded Successfully.")
+print("[Garden Suite Pro]: UI Engine Loaded Successfully (Price Tag Removed).")
