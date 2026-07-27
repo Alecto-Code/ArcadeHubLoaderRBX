@@ -42,14 +42,44 @@ if _G.ArcadeOverlayCleanup then
 	task.wait(0.1)
 end
 
+-- // Safe Universal Module Resolver // --
+local function getModule(moduleName: string): any
+	-- 1. Check if running inside Roblox Studio / Instance Hierarchy (script.Parent)
+	local okScript, scriptObj = pcall(function() return script end)
+	if okScript and scriptObj and typeof(scriptObj) == "Instance" and scriptObj.Parent then
+		local found = scriptObj.Parent:FindFirstChild(moduleName)
+		if found then return require(found) end
+	end
+
+	-- 2. Check if folder exists in ReplicatedStorage, CoreGui, or PlayerGui
+	local searchContainers = {
+		game:GetService("ReplicatedStorage"),
+		parentGui,
+		workspace
+	}
+	for _, container in ipairs(searchContainers) do
+		if container then
+			local folder = container:FindFirstChild("ArcadeHUB_Modular") or container:FindFirstChild("ArcadeHUB") or container:FindFirstChild("BYPASSE")
+			if folder and folder:FindFirstChild(moduleName) then
+				return require(folder:FindFirstChild(moduleName))
+			end
+			if container:FindFirstChild(moduleName) then
+				return require(container:FindFirstChild(moduleName))
+			end
+		end
+	end
+
+	error("[ArcadeHUB Error]: Module '" .. moduleName .. "' not found. Make sure your ModuleScript files are inside a folder named 'ArcadeHUB' or 'BYPASSE' in ReplicatedStorage or PlayerGui!")
+end
+
 -- // Load Sub-Modules // --
-local Theme          = require(script.Parent:WaitForChild("Theme"))
-local Visual         = require(script.Parent:WaitForChild("Visual"))
-local Farm           = require(script.Parent:WaitForChild("Farm"))
-local Inventory      = require(script.Parent:WaitForChild("Inventory"))
-local PlayerModule   = require(script.Parent:WaitForChild("Player"))
-local Utility        = require(script.Parent:WaitForChild("Utility"))
-local Gui            = require(script.Parent:WaitForChild("Gui"))
+local Theme          = getModule("Theme")
+local Visual         = getModule("Visual")
+local Farm           = getModule("Farm")
+local Inventory      = getModule("Inventory")
+local PlayerModule   = getModule("Player")
+local Utility        = getModule("Utility")
+local Gui            = getModule("Gui")
 
 -- // Dynamic Mutation Registry & State // --
 local knownMutations = {
