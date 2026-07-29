@@ -1,4 +1,4 @@
-local VPS_HOST = "103.176.79.8:3000"
+local VPS_HOST = "http://103.176.79.8:3000" 
 
 local HttpService = game:GetService("HttpService")
 local placeId = tostring(game.PlaceId)
@@ -32,37 +32,54 @@ local function decryptPayload(cipherText, key, iv)
     return cipherText
 end
 
-local httpRequest = (syn and syn.request) or (http and http.request) or request or http_request
-
-local function performBootstrap()
-    local requestPayload = HttpService:JSONEncode({
-        placeId = placeId,
-        timestamp = os.time() * 1000,
-        nonce = tostring(math.random(100000, 999999))
-    })
-
-    local responseBody
-    if httpRequest then
-        local res = httpRequest({
-            Url = bootstrapEndpoint,
-            Method = "POST",
-            Headers = { ["Content-Type"] = "application/json" },
-            Body = requestPayload
+local function customFetch(url)
+    local reqFunc = (syn and syn.request) or (http and http.request) or request or http_request
+    if reqFunc then
+        local res = reqFunc({
+            Url = url,
+            Method = "GET"
         })
-        if res and res.StatusCode == 200 then
-            responseBody = res.Body
+        if res and (res.StatusCode == 200 or res.Status == 200) then
+            return res.Body
         end
-    else
-        local ok, res = pcall(function()
-            return game:HttpPost(bootstrapEndpoint, requestPayload, true)
-        end)
-        if ok then responseBody = res end
     end
 
-    return responseBody
+    local ok, body = pcall(function()
+        return game:HttpGet(url)
+    end)
+    if ok and body then
+        return body
+    end
+
+    return nil
 end
 
-local rawBootstrapResponse = performBootstrap()
+local requestPayload = HttpService:JSONEncode({
+    placeId = placeId,
+    timestamp = os.time() * 1000,
+    nonce = tostring(math.random(100000, 999999))
+})
+
+local reqFunc = (syn and syn.request) or (http and http.request) or request or http_request
+local rawBootstrapResponse
+
+if reqFunc then
+    local res = reqFunc({
+        Url = bootstrapEndpoint,
+        Method = "POST",
+        Headers = { ["Content-Type"] = "application/json" },
+        Body = requestPayload
+    })
+    if res and (res.StatusCode == 200 or res.Status == 200) then
+        responseBody = res.Body
+        rawBootstrapResponse = res.Body
+    end
+else
+    local ok, res = pcall(function()
+        return game:HttpPost(bootstrapEndpoint, requestPayload, true)
+    end)
+    if ok then rawBootstrapResponse = res end
+end
 
 if not rawBootstrapResponse then
     warn("[ArcadeHub Bootstrap Error] Handshake failed or server unreachable!")
@@ -81,12 +98,10 @@ local sessionIv  = keyPackageBytes:sub(33, 48)
 local sessionToken = bootstrapData.token
 
 local targetPayloadUrl = payloadEndpoint .. sessionToken
-local fetchOk, encryptedBuffer = pcall(function()
-    return game:HttpGet(targetPayloadUrl)
-end)
+local encryptedBuffer = customFetch(targetPayloadUrl)
 
-if not fetchOk or not encryptedBuffer then
-    warn("[ArcadeHub Delivery Error] Failed to fetch session payload!")
+if not encryptedBuffer then
+    warn("[ArcadeHub Delivery Error] Failed to fetch session payload! (Token expired or network blocked)")
     return
 end
 
